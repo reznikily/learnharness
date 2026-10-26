@@ -100,11 +100,13 @@ export function listSourceSegments(agent: PromptAgent): Array<{ path: string; sh
  * The effective segment view for one agent — every segment with its source
  * text, override text, and effective switch state. `switches` is the
  * settings record's agent.prompts map (absent key = off); enabled =
- * switch on AND the override file exists.
+ * switch on AND the override file exists. When presetTexts is provided,
+ * its present keys override source regardless of legacy switches.
  */
 export function effectivePromptSegments(
 	agent: PromptAgent,
 	switches: Record<string, boolean>,
+	presetTexts?: Record<string, string>,
 ): PromptSegmentInfo[] {
 	return listSourceSegments(agent).map((segment) => {
 		let sourceText: string;
@@ -113,12 +115,12 @@ export function effectivePromptSegments(
 		} catch {
 			sourceText = ""; // source unreadable — the agent loader would crash anyway
 		}
-		const overrideText = readPromptOverride(segment.path);
+		const overrideText = presetTexts === undefined ? readPromptOverride(segment.path) : presetTexts[segment.path] ?? null;
 		return {
 			path: segment.path,
 			sourceText,
 			overrideText,
-			enabled: switches[segment.path] === true && overrideText !== null,
+			enabled: overrideText !== null && (presetTexts !== undefined || switches[segment.path] === true),
 			shared: segment.shared,
 		};
 	});
