@@ -82,12 +82,12 @@ for (const [kind, input] of Object.entries({
 	let spawns = 0;
 	const tools = jobTools({ chatId: owner.id, jobStore: stores.jobStore, spawn: (job) => {
 		spawns++;
-		assert.deepEqual(stores.jobStore.getJob(job.id)!.input, input);
+		assert.deepEqual(stores.jobStore.getJob(job.id)!.input, kind === "demo" ? {...input,format:"components-v1"} : kind === "visual" ? {...input,title:"Visualization",format:"components-v1"} : input);
 	} });
 	await tools[kind]!.execute!("fixture-dispatch", input);
 	await tools[kind]!.execute!("fixture-dispatch", input);
 	assert.equal(spawns, 1);
-	assert.equal(stores.jobStore.listJobs(owner.id)[0]!.kind, kind as JobKind);
+	assert.equal(stores.jobStore.listJobs(owner.id)[0]!.kind, (kind === "visual" ? "demo" : kind) as JobKind);
 });
 
 test("saved question survives absent transcript; runner ends while delivery is still pending", async () => {

@@ -1,0 +1,5 @@
+import runtime from '../../generated/visual-runtime.json' with {type:'json'};
+/** Encode source as inert text; only the application-owned bootstrap executes it. */
+export function visualDocument(source:string, diagrams:Record<string,import("./diagrams.ts").DiagramResource> = {}):string {
+ return `<!doctype html><html class="dark"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; font-src data:; img-src data: blob:; connect-src 'none'; base-uri 'none'; form-action 'none'"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${runtime.css.replace(/<\/style/gi,'<\\/style')}</style></head><body><div id="root" data-visual-root></div><script id="visual-diagrams" type="application/json">${JSON.stringify(diagrams).replace(/</g,'\\u003c')}</script><script id="visual-source" type="text/plain">${JSON.stringify(source).replace(/</g,'\\u003c')}</script><script>${runtime.script.replace(/<\/script/gi,'<\\/script')}</script></body></html>`;
+}

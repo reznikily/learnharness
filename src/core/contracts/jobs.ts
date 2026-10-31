@@ -199,12 +199,14 @@ export interface ResearchResult {
 }
 
 export interface DemoToolInput {
+ format?: "components-v1";
 	title: string;
 	/** Precise brief: concept, parameters/interactions, visual style. */
 	brief: string;
 }
 
 export interface DemoResult {
+	format?: "components-v1";
 	title: string;
 	/** Self-contained single-file HTML/JS document (sandboxed-iframe ready). */
 	html: string;

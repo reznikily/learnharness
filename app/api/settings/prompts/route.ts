@@ -10,6 +10,7 @@ export async function GET() {
 		presets: state.presets.map(({ id, name }) => ({ id, name })),
 		prober: effectivePromptSegments("prober", {}, texts),
 		teacher: effectivePromptSegments("teacher", {}, texts),
+		demoBuilder: effectivePromptSegments("demoBuilder", {}, texts),
 		practice: effectivePromptSegments("practice", {}, texts),
 	});
 }

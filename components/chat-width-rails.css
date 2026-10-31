@@ -1,0 +1,39 @@
+.chat-width-rails {
+	position: absolute;
+	inset-block-start: 0;
+	left: 50%;
+	transform: translateX(-50%);
+	max-width: 100%;
+	pointer-events: none;
+	z-index: 20;
+}
+.chat-width-handle {
+	position: absolute;
+	top: 8px;
+	bottom: 8px;
+	width: 16px;
+	pointer-events: auto;
+	cursor: col-resize;
+	touch-action: none;
+	user-select: none;
+	outline: none;
+}
+.chat-width-handle[data-side="left"] { left: 0; }
+.chat-width-handle[data-side="right"] { right: 0; }
+.chat-width-handle span {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 1px;
+	border-radius: 2px;
+	background: var(--muted-foreground);
+	opacity: 0;
+	transition: opacity 160ms ease-out;
+}
+.chat-width-handle[data-side="left"] span { left: 0; }
+.chat-width-handle[data-side="right"] span { right: 0; }
+.chat-width-rails:has(.chat-width-handle:hover) span { opacity: 0.3; }
+.chat-width-rails:has(.chat-width-handle:focus-visible) span,
+.chat-width-rails[data-dragging] span { opacity: 0.65; }
+.chat-width-shield { position: fixed; inset: -100vh -100vw; pointer-events: auto; cursor: col-resize; }
+@media (prefers-reduced-motion: reduce) { .chat-width-handle span { transition: none; } }

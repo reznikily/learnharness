@@ -35,6 +35,10 @@ import { PATHS } from "../config.ts";
 import {
 	buildDemoSrcDoc,
 	DEMO_BRIDGE_SCRIPT,
+	DEMO_FOLLOW_HOLD_MS,
+	DEMO_RESIZE_EASING,
+	DEMO_RESIZE_MS,
+	demoResizeEase,
 	DemoCard,
 	DemoErrorChip,
 	INITIAL_DEMO_BRIDGE_STATE,
@@ -237,6 +241,50 @@ describe("demo bridge", () => {
 		assert.deepEqual(reduceDemoBridgeState(state, { type: "something-else" }), state);
 		assert.deepEqual(reduceDemoBridgeState(state, "demo-resize"), state);
 		assert.deepEqual(reduceDemoBridgeState(state, null), state);
+	});
+
+	it("keeps a components-v1 demo at full height; legacy HTML keeps the 100vh-loop guard", () => {
+		const inline = reduceDemoBridgeState(INITIAL_DEMO_BRIDGE_STATE, { type: "demo-resize", height: 13405 }, { inline: true });
+		assert.equal(inline.height, 13405, "no 2400 clip, inner scroll or scale for components-v1");
+		assert.equal(reduceDemoBridgeState(INITIAL_DEMO_BRIDGE_STATE, { type: "demo-resize", height: 13405 }).height, 2400);
+		assert.equal(reduceDemoBridgeState(INITIAL_DEMO_BRIDGE_STATE, { type: "demo-resize", height: 5 }, { inline: true }).height, 80);
+	});
+
+	it("demoResizeEase is the runtime's cubic-bezier(0.32, 0.72, 0, 1)", () => {
+		assert.equal(demoResizeEase(0), 0);
+		assert.equal(demoResizeEase(1), 1);
+		assert.equal(demoResizeEase(-1), 0);
+		assert.equal(demoResizeEase(2), 1);
+		let previous = 0;
+		for (let i = 1; i <= 100; i++) {
+			const value = demoResizeEase(i / 100);
+			assert.ok(value >= previous, "monotonic");
+			previous = value;
+		}
+		// Reference points from the curve's parametric form (x(u), y(u)) at u = 0.25 and 0.5.
+		const point = (u: number) => [3 * 0.32 * u * (1 - u) ** 2 + u ** 3, 3 * 0.72 * u * (1 - u) ** 2 + 3 * u * u * (1 - u) + u ** 3] as const;
+		for (const u of [0.25, 0.5]) {
+			const [x, y] = point(u);
+			assert.ok(Math.abs(demoResizeEase(x) - y) < 1e-4);
+		}
+		assert.equal(DEMO_RESIZE_EASING, "cubic-bezier(0.32, 0.72, 0, 1)");
+	});
+
+	it("the bridge reports the pressed control's displacement as a follow plan on the shared clock", () => {
+		assert.ok(DEMO_BRIDGE_SCRIPT.includes(`HOLD=${DEMO_FOLLOW_HOLD_MS},DUR=${DEMO_RESIZE_MS}`));
+		assert.ok(DEMO_BRIDGE_SCRIPT.includes("follow:follow"));
+		assert.ok(DEMO_BRIDGE_SCRIPT.includes("html.style.translate"));
+		assert.ok(!DEMO_BRIDGE_SCRIPT.includes("${"), "template constants are interpolated");
+	});
+
+	it("snaps the initial measurement and direct input, animates later content changes", () => {
+		const initial = reduceDemoBridgeState(INITIAL_DEMO_BRIDGE_STATE, { type: "demo-resize", height: 200 });
+		assert.equal(initial.motion, false);
+		const grown = reduceDemoBridgeState(initial, { type: "demo-resize", height: 800, motion: true });
+		assert.equal(grown.motion, true);
+		const direct = reduceDemoBridgeState(grown, { type: "demo-resize", height: 200, motion: false });
+		assert.equal(direct.motion, false);
+		assert.equal(reduceDemoBridgeState(direct, { type: "demo-resize", height: 200, motion: false }), direct);
 	});
 });
 

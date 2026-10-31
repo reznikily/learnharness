@@ -85,6 +85,7 @@ function settlementErrorText(error: unknown): string {
 }
 
 const jobRunner = createJobRunner({
+ promptTexts: activePromptTexts,
 	chatStore: stores.chatStore,
 	jobStore: stores.jobStore,
 	deliver: deliverJobResult,

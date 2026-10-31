@@ -146,7 +146,7 @@ export function resolveModelSpec(
 	slots?: Partial<Record<ModelSlotName, ModelSlot>>,
 ): EffectiveModelSpec | undefined {
 	const slotName = ROLE_SLOT[role] as ModelSlotName | undefined;
-	const slot = slotName ? slots?.[slotName] : undefined;
+	const slot = role === "demoBuilder" ? {model:{provider:"kimi-coding",id:"k3-256k"},thinkingLevel:"max" as const} : slotName ? slots?.[slotName] : undefined;
 	const model = override?.model ?? slot?.model;
 	if (!model) return undefined;
 	return {

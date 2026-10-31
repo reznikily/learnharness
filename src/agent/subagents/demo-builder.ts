@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { renderDiagram, type DiagramResource } from "./diagrams.ts";
+import { visualDocument } from "./visual-document.ts";
+import { effectivePromptSegments } from "../prompt-segments.ts";
 import { Type } from "typebox";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { Usage } from "@earendil-works/pi-ai";
@@ -14,7 +18,7 @@ import { healToolRecord } from "../tools/heal.ts";
  * single-file HTML/JS demo, TESTS IT HEADLESSLY (run_demo), and iterates
  * fix → re-run until clean — before anything reaches the lesson.
  *
- * Shape: a ToolLoopAgent with two executable tools (write_demo / run_demo) —
+ * Shape: write_demo / run_demo, plus render_diagram in component mode —
  * the engine is injectable (tests use a scripted faux engine) and the headless
  * API is injectable (tests use a fake; production uses the app's own
  * Chromium browser service, system Chrome as fallback).
@@ -31,6 +35,8 @@ export interface DemoBuilderInput {
 }
 
 export interface DemoBuilderOptions {
+	componentMode?: boolean;
+	promptTexts?: Record<string,string>;
 	/** Test seam: scripted engine; production uses the demoBuilder role. */
 	engine?: PiEngine;
 	headless?: HeadlessApi;
@@ -76,6 +82,7 @@ THE HOUSE RULE — never deliver untested:
 Never claim success you did not see: a PASSED run_demo is the only definition of done.`;
 
 interface BuilderState {
+ diagrams?: Record<string,DiagramResource>;
 	html: string | null;
 	/** The html that the last run_demo tested (null = never tested). */
 	testedHtml: string | null;
@@ -100,18 +107,35 @@ export function createDemoBuilderTools(
 	state: BuilderState,
 	headless: HeadlessApi,
 	onActivity?: (line: string) => void,
+ componentMode = false,
 ): Record<string, AgentTool<any>> {
-	return healToolRecord({
+ const writeInput = componentMode ? Type.Object({html:Type.String({description:"JavaScript factory body using the supplied React/component API; end with return Demo. No HTML, JSX, imports or CSS."})}) : writeDemoInput;
+ const diagramInput=Type.Object({engine:Type.Union([Type.Literal("plantuml"),Type.Literal("mermaid")]),source:Type.String({maxLength:100000})});
+ return healToolRecord({
+  ...(componentMode ? {render_diagram:{
+   name:"render_diagram",label:"render_diagram",
+   description:"Render an ER diagram through local Kroki. Returns an id for h(Diagram,{id,label}). Source and SVG are saved offline with the next write_demo. No custom styling or external resources.",
+   parameters:diagramInput,
+   execute:serverExecute("render_diagram",diagramInput,async({engine,source},{signal})=>{
+    if(Object.keys(state.diagrams??{}).length>=12) throw new Error("At most 12 diagrams per demo.");
+    const resource=await renderDiagram(engine,source,signal);
+    signal?.throwIfAborted();
+    const id="diagram-"+randomUUID();
+    (state.diagrams??={})[id]=resource;
+    onActivity?.("render_diagram: ready");
+    return {id,instruction:"Use h(Diagram,{id,label}) in write_demo, then run_demo."};
+   }),
+  }} : {}),
 		write_demo: {
 			name: "write_demo",
 			label: "write_demo",
 			description:
-				"Write the complete self-contained HTML document for the demo (overwrites any previous version). " +
+				(componentMode ? "Write a JavaScript component factory body using the supplied components, ending with return Demo. " : "Write the complete self-contained HTML document for the demo (overwrites any previous version). ") +
 				"Always follow with run_demo to test it headlessly.",
-			parameters: writeDemoInput,
-			execute: serverExecute("write_demo", writeDemoInput, async ({ html }) => {
+			parameters: writeInput,
+			execute: serverExecute("write_demo", writeInput, async ({ html }) => {
 				if (!html || html.trim().length === 0) return "ERROR: empty document — write the full HTML.";
-				state.html = html;
+				state.html = componentMode ? visualDocument(html,state.diagrams) : html;
 				onActivity?.(`write_demo: ${(html.length / 1024).toFixed(1)} KB`);
 				return `Saved (${html.length} bytes). Now call run_demo to test it — never deliver untested.`;
 			}),
@@ -129,7 +153,7 @@ export function createDemoBuilderTools(
 				if (reason) return `HEADLESS UNAVAILABLE: ${reason}`;
 				let result: DemoRunResult;
 				try {
-					result = await headless.runDemo(state.html, probe ? { probe } : undefined);
+					result = await headless.runDemo(state.html, {probe,isolated:componentMode,screenshot:componentMode});
 				} catch (err) {
 					const msg = err instanceof Error ? err.message : String(err);
 					onActivity?.("run_demo: browser error");
@@ -140,7 +164,7 @@ export function createDemoBuilderTools(
 				onActivity?.(
 					result.ok ? "run_demo: clean" : `run_demo: ${summarizeCounts(result)}`,
 				);
-				return formatRunResult(result);
+				return componentMode && result.screenshot ? {text:formatRunResult(result)+" Inspect this render before finishing.",images:[{data:result.screenshot,mimeType:"image/png"}]} : formatRunResult(result);
 			}),
 		},
 	});
@@ -192,6 +216,7 @@ export async function runDemoBuilder(input: DemoBuilderInput, opts: DemoBuilderO
 		return { title, html: "", tested: true, notes: `FAILED: ${reason}` };
 	}
 
+	if(opts.componentMode && opts.engine && !opts.engine.model.input.includes("image")) return {title,html:"",tested:true,format:"components-v1",notes:"FAILED: this visual agent requires an image-capable model to inspect its render."};
 	const state: BuilderState = { html: null, testedHtml: null, lastResult: null };
 
 	const prompt = [
@@ -204,10 +229,10 @@ export async function runDemoBuilder(input: DemoBuilderInput, opts: DemoBuilderO
 
 	let finalText = "";
 	try {
-		const result = await runSubagent(Object.values(createDemoBuilderTools(state, headless, opts.onActivity)), {
+		const result = await runSubagent(Object.values(createDemoBuilderTools(state, headless, opts.onActivity, opts.componentMode)), {
 			role: "demoBuilder",
 			engine: opts.engine,
-			systemPrompt: INSTRUCTIONS,
+			systemPrompt: opts.componentMode ? effectivePromptSegments("demoBuilder", {}, opts.promptTexts).map(s=>s.enabled?s.overrideText:s.sourceText).join("\n\n") : INSTRUCTIONS,
 			prompt,
 			maxTurns: opts.maxSteps ?? 24,
 			abortSignal: opts.abortSignal,
@@ -234,10 +259,11 @@ export async function runDemoBuilder(input: DemoBuilderInput, opts: DemoBuilderO
 	// The verify gate: the delivered html must have a clean headless run —
 	// even when the model claims success or forgets the final run_demo.
 	if (state.testedHtml !== state.html || !state.lastResult?.ok) {
+ if(opts.componentMode) return {title,html:"",tested:true,format:"components-v1",notes:"FAILED: the current visualization was not explicitly tested and viewed with run_demo."};
 		opts.onActivity?.("final verification");
 		let verify: DemoRunResult;
 		try {
-			verify = await headless.runDemo(state.html);
+			verify = await headless.runDemo(state.html, {isolated:opts.componentMode});
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			return { title, html: "", tested: true, notes: `FAILED: final verification crashed — ${msg}` };
@@ -253,5 +279,5 @@ export async function runDemoBuilder(input: DemoBuilderInput, opts: DemoBuilderO
 		}
 	}
 
-	return { title, html: state.html, tested: true, notes: notes(finalText) };
+	return { title, html: state.html, tested: true, notes: notes(finalText), ...(opts.componentMode ? {format:"components-v1" as const} : {}) };
 }

@@ -66,10 +66,11 @@ import { NativeSubscriptionBackgroundAccess } from "./subscription-connections";
 
 /** One slot's display identity — the tier's roster as the row hint rides
  *  with the resolved default (owner: the hint ALWAYS names the default). */
-const SLOT_META: Record<ModelSlotName, { label: string; roster: string }> = {
-	strong: { label: "Strong", roster: "The main model for your sessions" },
-	cheap: { label: "Cheap", roster: "The assistants that research, build demos, and grade your work" },
-	vision: { label: "Vision", roster: "The assistants that draw and read PDFs" },
+const SLOT_META: Record<ModelSlotName | "demoBuilder", { label: string; roster: string }> = {
+	demoBuilder: {label:"Demos & visuals",roster:"One agent for interactive and static illustrations"},
+ strong: { label: "Strong", roster: "The main model for your sessions" },
+	cheap: { label: "Cheap", roster: "The assistants that research and grade your work" },
+	vision: { label: "Vision", roster: "The assistant that reads PDFs" },
 };
 
 /** The search engines this wave ships (src/core/search.ts) + their labels. */
@@ -177,10 +178,11 @@ interface PromptView {
 	prober: SegmentInfo[];
 	teacher: SegmentInfo[];
 	practice: SegmentInfo[];
+ demoBuilder?: SegmentInfo[];
 }
 
 export interface PromptSection {
-	id: "teacher" | "prober" | "practice" | "shared";
+	id: "teacher" | "prober" | "practice" | "shared" | "demoBuilder";
 	label: string;
 	/** The one header that earns a hint: "Shared" alone is not
 	 *  self-evident. Teacher/Prober are. */
@@ -196,9 +198,10 @@ export interface PromptSection {
  *  agents' own chunks keep their lists' order — which IS the prompt
  *  assembly order (numeric-prefix filename sort). Pure — exported for
  *  tests. */
-export function sectionedSegments(view: { prober: SegmentInfo[]; teacher: SegmentInfo[]; practice?: SegmentInfo[] }): PromptSection[] {
+export function sectionedSegments(view: { prober: SegmentInfo[]; teacher: SegmentInfo[]; practice?: SegmentInfo[]; demoBuilder?: SegmentInfo[] }): PromptSection[] {
 	const own = (who: "prober" | "teacher") => view[who].filter((s) => !s.shared);
 	return [
+ ...(view.demoBuilder ? [{id:"demoBuilder" as const,label:"Demos & visuals",segments:view.demoBuilder}] : []),
 		{ id: "teacher", label: "Teacher", segments: own("teacher") },
 		{ id: "prober", label: "Prober", segments: own("prober") },
 		...(view.practice ? [{ id: "practice" as const, label: "Practice", segments: view.practice.filter(s => !s.shared) }] : []),
@@ -318,7 +321,7 @@ export function AgentSection({
 	const [segmentStatus, setSegmentStatus] = useState<string | null>(null);
 	/** One open dropdown for the whole section: which slot (or the search
 	 *  row), which kind. */
-	const [openMenu, setOpenMenu] = useState<{ target: ModelSlotName | "search"; kind: "model" | "thinking" | "engine" } | null>(null);
+	const [openMenu, setOpenMenu] = useState<{ target: ModelSlotName | "demoBuilder" | "search"; kind: "model" | "thinking" | "engine" } | null>(null);
 	const menuAnchorRef = useRef<HTMLSpanElement>(null);
 
 	const refreshSearch = () =>
@@ -582,8 +585,8 @@ export function AgentSection({
 	return (
 		<>
 			<SettingsGroup label="Models" testid="group-models">
-				{MODEL_SLOTS.map((slot) => {
-					const override = models?.[slot];
+				{([...MODEL_SLOTS, "demoBuilder"] as const).map((slot) => {
+					const override = slot === "demoBuilder" ? {model:{provider:"kimi-coding",id:"k3-256k"},thinkingLevel:"max" as const,...agent?.models?.demoBuilder} : models?.[slot];
 					const modelId = override?.model?.id ?? "";
 					const provider = override?.model?.provider ?? "";
 					const thinking = override?.thinkingLevel ?? "";
@@ -592,7 +595,7 @@ export function AgentSection({
 					// carries the roster, the triggers read "—" when unpicked — but
 					// the pin still governs the thinking level LIST when no override
 					// names a model to read levels from.
-					const pin = slots?.[slot];
+					const pin = slot === "demoBuilder" ? undefined : slots?.[slot];
 					// The model whose levels govern the thinking list: the
 					// override, else the resolved pin (when it's in the federated
 					// catalog); the standard ladder as the last fallback.
@@ -654,7 +657,8 @@ export function AgentSection({
 												// fresh pick writes a level — the stored one rides as-is
 												// (the write clamps server-side), else the ordering's level.
 												const next = populateLevel(thinking || undefined, entry.supportedLevels);
-												onModelsChange(composeSlotModel(models, slot, entry.provider, entry.id, next));
+												if(slot === "demoBuilder") onSectionChange({...agent,models:{...agent?.models,demoBuilder:{model:{provider:entry.provider,id:entry.id},thinkingLevel:next}}});
+ else onModelsChange(composeSlotModel(models, slot, entry.provider, entry.id, next));
 												setOpenMenu(null);
 											}}
 											footer={
@@ -678,7 +682,8 @@ export function AgentSection({
 											// the same one the trigger shows.
 											effectiveLevel={thinking || (chosen ? defaultOrderLevel(levels) : undefined)}
 											onPick={(level) => {
-												onModelsChange(composeSlotModel(models, slot, provider, modelId, level));
+												if(slot === "demoBuilder") onSectionChange({...agent,models:{...agent?.models,demoBuilder:{model:{provider,id:modelId},thinkingLevel:level as ThinkingLevel}}});
+ else onModelsChange(composeSlotModel(models, slot, provider, modelId, level));
 												setOpenMenu(null);
 											}}
 										/>

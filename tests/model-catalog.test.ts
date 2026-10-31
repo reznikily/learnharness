@@ -131,7 +131,8 @@ describe("the background roles' resolved pins (rolePins)", () => {
 		const pins = rolePinsFor(resolveSettings(null).agent.models);
 		assert.deepEqual(Object.keys(pins), [...BACKGROUND_MODEL_ROLES]);
 		for (const role of BACKGROUND_MODEL_ROLES) {
-			assert.equal(pins[role], null, role);
+			if(role === "demoBuilder") assert.deepEqual(pins[role],{model:{provider:"kimi-coding",id:"k3-256k"},thinkingLevel:"max"});
+ else assert.equal(pins[role], null, role);
 		}
 	});
 

@@ -65,6 +65,7 @@ export const pdfModelOverride: { current?: PiEngine } = {};
 type JobToolInput = ResearchToolInput | DemoToolInput | VisualToolInput | PdfToolInput;
 
 export interface JobRunnerDeps {
+ promptTexts?: () => Record<string,string>;
 	chatStore: ChatStore;
 	jobStore: JobStore;
 	/**
@@ -425,6 +426,8 @@ export function createJobRunner(deps: JobRunnerDeps): JobRunner {
 				{ title, brief },
 				{
 					engine: model,
+ componentMode: input?.format === "components-v1",
+ promptTexts: deps.promptTexts?.(),
 					abortSignal: loop.abortSignal,
 					chatId: loop.chatId,
 					onUsage: (usage) => loop.onUsage(piUsageToStep(usage)),

@@ -41,10 +41,10 @@ export const researchInputSchema = Type.Object({
 });
 
 export const demoInputSchema = Type.Object({
-	title: Type.String({ description: "Short title for the demo card, e.g. 'Damped harmonic oscillator'." }),
+	title: Type.String({ description: "Short accessible title for the visualization, e.g. 'Damped harmonic oscillator'." }),
 	brief: Type.String({
 		description:
-			"Precise brief for the builder: the concept, the parameters/controls and what each does, the interactions, and the visual style. " +
+			"Precise brief for the builder: the concept, the parameters/controls and what each does, the interactions, and the exact geometry. Application styling is automatic. " +
 			"The builder sees NOTHING else of the lesson — include everything it needs, including necessary formulas and constants.",
 	}),
 });
@@ -78,9 +78,9 @@ function dispatch(
 	input: ResearchInput | DemoInput | VisualInput | PdfInput,
 ): string {
 	const existing = ctx.jobStore.findJobByToolCallId(ctx.chatId, toolCallId);
-	const job = existing ?? ctx.jobStore.createJob({ kind, chatId: ctx.chatId, toolCallId, input });
-	if (!existing) ctx.spawn(job, input);
-	return `Dispatched (job ${job.id}). ${ack}`;
+	const job = existing ?? ctx.jobStore.createJob({ kind, chatId: ctx.chatId, toolCallId, input: kind === "demo" ? {...input,format:"components-v1"} : input });
+	if (!existing) ctx.spawn(job, (kind === "demo" ? {...input,format:"components-v1"} : input) as typeof input);
+	return `Dispatched (job ${job.id}). ${ack}${kind === "demo" ? ` Place [visual](lh-artifact:${job.id}) on its own line between paragraphs exactly where the artifact belongs. It updates in place; do not insert it again on completion.` : ""}`;
 }
 
 const RESEARCH_ACK =
@@ -101,18 +101,8 @@ const RESEARCH_DESCRIPTION =
 	"The call is ASYNC and fire-and-forget — it resolves immediately and your turn continues; the research brief arrives later " +
 	"as a new message and the lesson resumes from it. Cite the brief's sources when you use them. " +
 	"NEVER use it for things you know cold, internal reasoning, or math.";
-const DEMO_DESCRIPTION =
-	"Dispatch a background sub-agent that BUILDS and headlessly TESTS an interactive teaching instrument — a single-file HTML " +
-	"demo (parameter sweep, simulation, animation, sampling) rendered live in the lesson. Use it when the concept is DYNAMIC: " +
-	"something to sweep, animate, or sample is better experienced than described. " +
-	"The call is ASYNC and fire-and-forget — it resolves immediately and your turn continues; the tested demo arrives later " +
-	"as a new message. Write a precise brief: concept, controls, interactions, style.";
-const VISUAL_DESCRIPTION =
-	"Dispatch a background sub-agent that hand-authors ONE precise SVG figure, renders it, LOOKS at the render, and iterates " +
-	"until correct. Use it for exact spatial pictures auto-layout diagrams can't do: coordinate geometry, number lines, vectors, " +
-	"function plots, physical layouts. For flows/relations/taxonomies write mermaid inline instead. " +
-	"The call is ASYNC and fire-and-forget — it resolves immediately and your turn continues; the verified figure arrives later " +
-	"as a new message.";
+const DEMO_DESCRIPTION = "Create a static figure OR interactive teaching visualization using the unified component builder. Specify content, geometry, controls and behavior; application styles are automatic. Async: put the returned [visual](lh-artifact:JOB_ID) on its own line at the exact place between explanation paragraphs. Do not duplicate it when ready.";
+const VISUAL_DESCRIPTION = DEMO_DESCRIPTION;
 const PDF_DESCRIPTION =
 	"Dispatch a background sub-agent that READS a learner-provided PDF on your behalf (triage, targeted extraction, visual page " +
 	"reading for equations and diagrams) and returns a brief with page citations. Use it when the learner gives you a PDF path " +
@@ -152,7 +142,7 @@ export function jobTools(ctx: JobToolContext): Record<string, AgentTool<any>> {
 			description: VISUAL_DESCRIPTION,
 			parameters: visualInputSchema,
 			execute: serverExecute("visual", visualInputSchema, (input, { toolCallId }) =>
-				dispatch(ctx, "visual", toolCallId, VISUAL_ACK, input),
+				dispatch(ctx, "demo", toolCallId, DEMO_ACK, {title:"Visualization",brief:input.brief}),
 			),
 		},
 		pdf: {

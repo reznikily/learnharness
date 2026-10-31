@@ -20,6 +20,7 @@ import { standardFontsDir } from "./pdf-ops";
  */
 
 export interface DemoRunResult {
+ screenshot?: string;
 	/** console.error / console messages of type "error". */
 	consoleErrors: string[];
 	/** Uncaught exceptions (window.onerror / unhandled rejections). */
@@ -33,6 +34,8 @@ export interface DemoRunResult {
 }
 
 export interface RunDemoOptions {
+ isolated?: boolean;
+ screenshot?: boolean;
 	/** How long to let the page settle (animations, async CDN loads) — default 2s. */
 	settleMs?: number;
 	/** Optional JS expression evaluated in the page after settling; its value
@@ -284,13 +287,14 @@ async function runDemo(html: string, opts: RunDemoOptions = {}): Promise<DemoRun
 	const settleMs = opts.settleMs ?? 2000;
 	const dir = tempDir("lh-demo-");
 	const file = path.join(dir, "demo.html");
-	fs.writeFileSync(file, html, "utf-8");
+	fs.writeFileSync(file, opts.isolated ? `<!doctype html><meta charset="utf-8"><body style="margin:0"><iframe sandbox="allow-scripts" style="border:0;width:100%;height:600px" srcdoc="${html.replace(/&/g,"&amp;").replace(/"/g,"&quot;")}"></iframe>` : html, "utf-8");
 
 	const consoleErrors: string[] = [];
 	const pageErrors: string[] = [];
 	const failedRequests: string[] = [];
 	let probeResult: unknown;
 	let probed = false;
+ let screenshot: string | undefined;
 
 	try {
 		await withBrowserPage(async (page) => {
@@ -303,9 +307,13 @@ async function runDemo(html: string, opts: RunDemoOptions = {}): Promise<DemoRun
 		try {
 			await page.goto(pathToFileURL(file).href, { waitUntil: "load", timeout: 30_000 });
 			await new Promise((resolve) => setTimeout(resolve, settleMs));
-			if (opts.probe) {
+			const frame = opts.isolated ? await (await page.$("iframe"))?.contentFrame() : page;
+ if(!frame) throw new Error("Missing visual frame");
+ if(opts.isolated){const height=await frame.evaluate(()=>document.documentElement.scrollHeight);await page.$eval('iframe',(el,h)=>{(el as HTMLIFrameElement).style.height=Math.min(h as number,2400)+'px';},height);}
+ if(opts.screenshot) screenshot = Buffer.from(await page.screenshot({type:"png",fullPage:true})).toString("base64");
+ if (opts.probe) {
 				try {
-					probeResult = await page.evaluate(opts.probe);
+					probeResult = await frame.evaluate(opts.probe);
 				} catch (err) {
 					pageErrors.push(`probe failed: ${err instanceof Error ? err.message : String(err)}`);
 				}
@@ -328,6 +336,7 @@ async function runDemo(html: string, opts: RunDemoOptions = {}): Promise<DemoRun
 		pageErrors,
 		failedRequests,
 		...(probed ? { probeResult } : {}),
+ ...(screenshot ? {screenshot} : {}),
 		ok: consoleErrors.length === 0 && pageErrors.length === 0 && failedRequests.length === 0,
 	};
 }

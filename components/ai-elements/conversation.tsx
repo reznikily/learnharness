@@ -4,21 +4,36 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { LhViewMessage, LhViewPart } from "@/src/core";
 import { ArrowDownIcon, DownloadIcon } from "lucide-react";
-import type { ComponentProps } from "react";
-import { useCallback } from "react";
-import { StickToBottom, useStickToBottomContext } from "use-stick-to-bottom";
+import type { ComponentProps, RefObject } from "react";
+import { createContext, useCallback, useRef } from "react";
+import { StickToBottom, useStickToBottomContext, type StickToBottomContext } from "use-stick-to-bottom";
 
 export type ConversationProps = ComponentProps<typeof StickToBottom>;
 
-export const Conversation = ({ className, ...props }: ConversationProps) => (
-  <StickToBottom
-    className={cn("relative flex-1 overflow-y-hidden", className)}
-    initial="smooth"
-    resize="smooth"
-    role="log"
-    {...props}
-  />
-);
+/** Optional scroll handle for content that must release the bottom lock
+ *  (an inline demo resized by the learner). Null outside a Conversation. */
+export const ConversationScrollContext = createContext<RefObject<StickToBottomContext | null> | null>(null);
+
+export const Conversation = ({ className, contextRef, ...props }: ConversationProps) => {
+  const scrollRef = useRef<StickToBottomContext | null>(null);
+  const setContext = useCallback((context: StickToBottomContext | null) => {
+    scrollRef.current = context;
+    if (typeof contextRef === "function") contextRef(context);
+    else if (contextRef) contextRef.current = context;
+  }, [contextRef]);
+  return (
+    <ConversationScrollContext.Provider value={scrollRef}>
+      <StickToBottom
+        className={cn("relative flex-1 overflow-y-hidden", className)}
+        initial="smooth"
+        resize="smooth"
+        role="log"
+        contextRef={setContext}
+        {...props}
+      />
+    </ConversationScrollContext.Provider>
+  );
+};
 
 export type ConversationContentProps = ComponentProps<
   typeof StickToBottom.Content

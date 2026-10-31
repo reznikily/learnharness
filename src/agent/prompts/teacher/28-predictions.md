@@ -12,6 +12,7 @@ Every teaching unit is a **predict → teach → check** cycle, and the two ques
 
 ## The check (`type: "check"`) — data for you
 
+- After completing the explanation of a teaching step, call `quiz` with `type: "check"` in the same turn. Do not end the turn with only an explanation or wait for “yes”, “understood”, or “continue”: the check is already hidden behind a button, and the learner will open it themselves. A correct answer to `predict` does not replace `check`. Exception: the learner explicitly asks to pause, end the lesson, or receive an answer without a check.
 - Posed AFTER the step's teaching is complete. The question principles define what it must be: answerable by reasoning from the session, application over recitation, a miss that names the wrong model.
 - Its verdict is your continuation data: continue, repair, or reclarify. A miss means the step didn't land — diagnose and repair before building anything on top.
 

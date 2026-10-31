@@ -1,0 +1,28 @@
+// @ts-nocheck — real Chat with synthetic read-only API responses; never shipped.
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {Chat} from '../../components/chat';
+import {AppShell, SidebarProvider} from '../../components/sidebar';
+import {ServerEventsProvider} from '../../components/server-events';
+import {AppearanceProvider} from '../../components/settings/appearance';
+import {ActivityProvider} from '../../components/activity-dock';
+const q=new URLSearchParams(location.search);
+const html=(window as any).demoHTML as string;
+const format=q.get('legacy')?undefined:'components-v1';
+const after=q.get('after')==='long'?('Продолжение объяснения после демо. '.repeat(40)+'\n\n').repeat(12):'В первом шаге совпадает блок $H \\to (P \\to Q)$. Кнопка **«Следующий шаг»** покажет применения отдельно.\n\nЕщё одно различие: снять гипотезу — не значит запретить букву.';
+const history=Array.from({length:12},(_,i)=>i%2===0?{id:`u${i}`,role:'user',content:`Вопрос ${i}`,timestamp:i}:{id:`a${i}`,role:'assistant',content:[{type:'text',text:`### Объяснение ${i}\n`+('Абзац с **акцентом**, $x^2 + y^2$ и текстом.\n\n').repeat(4)}],stopReason:'stop',usage:{input:0,output:0,total:0,cacheReads:0,cacheWrites:0},timestamp:i,provider:'synthetic',model:'synthetic'});
+const messages=[...history,{id:'u-last',role:'user',content:'Покажи вывод',timestamp:100},{id:'a-last',role:'assistant',content:[{type:'text',text:'Вот как устроен вывод: два применения MP.\n\n[visual](lh-artifact:job_demo)\n\n'+after}],stopReason:'stop',usage:{input:0,output:0,total:0,cacheReads:0,cacheWrites:0},timestamp:101,provider:'synthetic',model:'synthetic'}];
+const job={id:'job_demo',kind:'demo',chatId:'synthetic',toolCallId:'t1',input:{},status:'done',activity:[],createdAt:'2026-10-27T00:00:00Z',updatedAt:'2026-10-27T00:00:00Z',result:{title:'Два MP',html,format,tested:true}};
+window.fetch=async(input,init)=>{
+ const path=String(input);if(init?.method&&init.method!=='GET')throw Error('Mutation blocked: '+path);
+ let body:any={};
+ if(path==='/api/chats')body={chats:[{id:'synthetic',title:'Synthetic',updatedAt:'2026-10-27T00:00:00Z',createdAt:'2026-10-27T00:00:00Z',kind:'teach'}]};
+ else if(path.startsWith('/api/chats/'))body={messages,inFlight:false};
+ else if(path.startsWith('/api/jobs'))body={jobs:[job]};
+ else if(path==='/api/activity')body={jobs:[],extractions:[]};
+ else if(path==='/api/settings')body={settings:{}};
+ else if(path==='/api/models')return new Response('{}',{status:503});
+ else if(path==='/api/graph/status')body={enabled:false};
+ return Response.json(body);
+};
+createRoot(document.getElementById('root')!).render(<ServerEventsProvider connect={()=>({close(){},onOpen(){},onEvent(){}})}><AppearanceProvider><SidebarProvider><ActivityProvider><AppShell><Chat chatId="synthetic" title="Demo UX probe" initialMessages={messages as never} initialConfigured/></AppShell></ActivityProvider></SidebarProvider></AppearanceProvider></ServerEventsProvider>);
