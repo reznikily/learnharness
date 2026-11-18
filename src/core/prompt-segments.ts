@@ -43,7 +43,7 @@ export interface PromptSegmentInfo {
  *  doc). Exported for the routes, which also check membership in the
  *  CURRENT source segment list. */
 export function isValidSegmentPath(segmentPath: string): boolean {
-	if (segmentPath === "system-prompt.md") return true;
+	if (segmentPath === "system-prompt.md" || segmentPath === "side-chat/80-voice.md") return true;
 	const m = /^(prober|teacher|practice|demoBuilder|shared)\/([\w.-]+\.md)$/.exec(segmentPath);
 	if (!m || m[2] === undefined) return false;
 	return FRAGMENT_RE.test(m[2]);

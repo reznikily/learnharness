@@ -236,6 +236,43 @@ describe("side instructions", () => {
 		assert.doesNotMatch(prompt, /one to three|You have no tools/);
 		assert.doesNotMatch(prompt, /probe_done|plan_init/, "no teaching base or tool doctrine");
 	});
+	it("active presets control side guidance, preserve empty overrides and restore defaults", async () => {
+		const { updatePromptPresets, activePromptTexts } = await import("../src/store/prompt-presets.ts");
+		const { allSegmentPaths } = await import("../src/agent/prompt-segments.ts");
+		assert.ok(allSegmentPaths().includes("side-chat/80-voice.md"));
+		assert.ok(!allSegmentPaths().includes("side-chat/00-base.md"));
+		assert.ok(!allSegmentPaths().includes("side-chat/90-style.md"));
+		const created = updatePromptPresets({ action: "create", name: "Side test" });
+		const id = created.activeId!;
+		try {
+			updatePromptPresets({ action: "write", id, path: "side-chat/80-voice.md", text: "Пиши на естественном русском." });
+			updatePromptPresets({ action: "write", id, path: "shared/10-voice.md", text: "" });
+			const prompt = composeSideChatInstructions({}, activePromptTexts());
+			assert.match(prompt, /Пиши на естественном русском/);
+			assert.doesNotMatch(prompt, /## Voice/);
+			assert.match(prompt, /## Accuracy/); // missing preset key uses current default
+			assert.match(prompt, /Do not solve it, identify or eliminate options/);
+			assert.ok(prompt.indexOf("## Side-answer brevity") > prompt.indexOf("Пиши на естественном русском"));
+			const { effectivePromptSegments } = await import("../src/agent/prompt-segments.ts");
+			for (const kind of ["teacher", "prober", "practice", "demoBuilder"] as const) {
+				assert.ok(!effectivePromptSegments(kind, {}, activePromptTexts()).some(segment => segment.path === "side-chat/80-voice.md"));
+			}
+			updatePromptPresets({ action: "activate", id: null });
+			assert.equal(composeSideChatInstructions({}, activePromptTexts()), composeSideChatInstructions());
+			updatePromptPresets({ action: "activate", id });
+			assert.equal(composeSideChatInstructions({}, activePromptTexts()), prompt);
+		} finally { updatePromptPresets({ action: "delete", id }); }
+	});
+	it("preset selection overrides stale legacy switches, including explicit empty text", async () => {
+		const { PROMPTS_OVERRIDE_DIR } = await import("../config.ts");
+		const file = path.join(PROMPTS_OVERRIDE_DIR, "shared", "10-voice.md");
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(file, "STALE LEGACY VOICE");
+		try {
+			assert.doesNotMatch(composeSideChatInstructions({ "shared/10-voice.md": true }, {}), /STALE LEGACY/);
+			assert.doesNotMatch(composeSideChatInstructions({}, { "shared/10-voice.md": "" }), /## Voice/);
+		} finally { fs.rmSync(file); }
+	});
 	it("keeps side brevity last while still honoring enabled shared overrides", async () => {
 		const { PROMPTS_OVERRIDE_DIR } = await import("../config.ts");
 		assert.ok(PROMPTS_OVERRIDE_DIR.startsWith(TMP_DATA + path.sep));

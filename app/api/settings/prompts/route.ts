@@ -1,4 +1,4 @@
-import { effectivePromptSegments, readPromptPresets, activePromptTexts } from "@/src/server";
+import { effectiveSideChatPromptSegments, effectivePromptSegments, readPromptPresets, activePromptTexts } from "@/src/server";
 
 export const dynamic = "force-dynamic";
 
@@ -12,5 +12,6 @@ export async function GET() {
 		teacher: effectivePromptSegments("teacher", {}, texts),
 		demoBuilder: effectivePromptSegments("demoBuilder", {}, texts),
 		practice: effectivePromptSegments("practice", {}, texts),
+		sideChat: effectiveSideChatPromptSegments({}, texts),
 	});
 }

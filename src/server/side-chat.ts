@@ -18,7 +18,8 @@ import { piEngineForSpec, type PiEngine } from "../agent/models.ts";
 import { isSubscriptionProvider } from "../agent/subscription-connections.ts";
 import { usageWasAdmitted } from "../agent/subscription-request-cycle.ts";
 import { composeSideChatInstructions, streamSideAnswer } from "../agent/side-chat.ts";
-import { effectiveSettings, stores } from "./stores.ts";
+import { activePromptTexts } from "../store/prompt-presets.ts";
+import { stores } from "./stores.ts";
 import { providerKeyPresent } from "./keys.ts";
 import { refreshConnectionCatalog } from "./model-catalog.ts";
 import { awaitCompaction } from "./compaction.ts";
@@ -279,5 +280,5 @@ async function productionEngineFor(record: ChatRecord): Promise<SideEngine | Res
 interface SideChatGlobal { __lhSideChatService?: SideChatService }
 export const sideChats: SideChatService = ((globalThis as typeof globalThis & SideChatGlobal).__lhSideChatService ??= createSideChatService({
 	chatStore: stores.chatStore, engineFor: productionEngineFor, beforeAsk: awaitCompaction,
-	instructions: () => composeSideChatInstructions(effectiveSettings().agent.prompts),
+	instructions: () => composeSideChatInstructions({}, activePromptTexts()),
 }));

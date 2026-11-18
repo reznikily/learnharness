@@ -9,9 +9,9 @@
  * practice agent also composes (voice, accuracy, formatting — one law
  * across every learner-facing agent; the LaTeX/markdown contract matters
  * because answers render through the same markdown pipeline). Shared
- * fragments honor the learner's enabled overrides, by the same key the
- * other agents use. A final side-only style fragment keeps replies brief
- * after the shared appendix; neither side-specific fragment is editable.
+ * fragments honor the active preset, using the same keys as the main agents.
+ * Dedicated editable side guidance follows them. The fixed base and final
+ * brevity rules remain outside preset editing.
  */
 
 import fs from "node:fs";
@@ -23,13 +23,11 @@ import { providerEventObserver } from "./provider-events.ts";
 import { PATHS } from "../../config.ts";
 import type { SideModelTurn } from "../core/side-chat.ts";
 import type { PiEngine } from "./models.ts";
-import { readPromptOverride } from "./prompt-segments.ts";
+import { effectiveSideChatPromptSegments } from "./prompt-segments.ts";
 
 const PROMPTS_DIR = path.join(PATHS.root, "src", "agent", "prompts");
 const SIDE_BASE = path.join(PROMPTS_DIR, "side-chat", "00-base.md");
 const SIDE_STYLE = path.join(PROMPTS_DIR, "side-chat", "90-style.md");
-/** The shared appendix, in composition order (keys = override paths). */
-const SIDE_SHARED_FRAGMENTS = ["shared/10-voice.md", "shared/15-accuracy.md", "shared/40-formatting.md"];
 
 function readSource(file: string): string {
 	try {
@@ -39,14 +37,11 @@ function readSource(file: string): string {
 	}
 }
 
-/** The side model's system prompt, composed fresh per call (an override
- *  switched on between questions lands on the next one). */
-export function composeSideChatInstructions(switches: Record<string, boolean> = {}): string {
-	const segments = [readSource(SIDE_BASE)];
-	for (const key of SIDE_SHARED_FRAGMENTS) {
-		const override = switches[key] === true ? readPromptOverride(key) : null;
-		segments.push(override ?? readSource(path.join(PROMPTS_DIR, ...key.split("/"))));
-	}
+/** The side model's system prompt, composed fresh per call; preset changes
+ * apply to the next question. Legacy callers may still supply switches. */
+export function composeSideChatInstructions(switches: Record<string, boolean> = {}, presetTexts?: Record<string, string>): string {
+	const segments = [readSource(SIDE_BASE), ...effectiveSideChatPromptSegments(switches, presetTexts)
+		.map(segment => segment.enabled ? segment.overrideText! : segment.sourceText)];
 	segments.push(readSource(SIDE_STYLE));
 	return segments
 		.map((s) => s.trim())

@@ -382,6 +382,13 @@ describe("first-run gate — slotsConfigured + setupStage (model-slots wave)", (
 });
 
 describe("sectionedSegments — actual per-agent prompt membership", () => {
+	it("lists dedicated side guidance and includes the helper in shared usage", () => {
+		const voice = { path: "shared/10-voice.md", sourceText: "voice", overrideText: null, enabled: false, shared: true };
+		const own = { ...voice, path: "side-chat/80-voice.md", sourceText: "", shared: false };
+		const sections = sectionedSegments({ prober: [], teacher: [voice], sideChat: [voice, own] });
+		assert.deepEqual(sections.find(section => section.id === "sideChat")?.segments.map(s => s.path), [own.path]);
+		assert.equal(sections.at(-1)!.segments[0]!.usageHint, "Used by Teacher and Side questions");
+	});
 	// Each agent lists its own shared subset; the view lists their union ONCE.
 	const view = {
 		prober: [

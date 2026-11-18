@@ -108,7 +108,20 @@ export function effectivePromptSegments(
 	switches: Record<string, boolean>,
 	presetTexts?: Record<string, string>,
 ): PromptSegmentInfo[] {
-	return listSourceSegments(agent).map((segment) => {
+	return resolveSegments(listSourceSegments(agent), switches, presetTexts);
+}
+
+/** Editable side guidance; the fixed role and final brevity rules stay outside presets. */
+export function effectiveSideChatPromptSegments(switches: Record<string, boolean> = {}, presetTexts?: Record<string, string>): PromptSegmentInfo[] {
+	const shared = ["shared/10-voice.md", "shared/15-accuracy.md", "shared/40-formatting.md"];
+	return resolveSegments([
+		...shared.map(key => ({ path: key, shared: true, file: path.join(PROMPTS_DIR, key) })),
+		{ path: "side-chat/80-voice.md", shared: false, file: path.join(PROMPTS_DIR, "side-chat", "80-voice.md") },
+	], switches, presetTexts);
+}
+
+function resolveSegments(segments: Array<{ path: string; shared: boolean; file: string }>, switches: Record<string, boolean>, presetTexts?: Record<string, string>): PromptSegmentInfo[] {
+	return segments.map((segment) => {
 		let sourceText: string;
 		try {
 			sourceText = fs.readFileSync(segment.file, "utf-8");
@@ -132,5 +145,6 @@ export function allSegmentPaths(): string[] {
 	for (const agent of ["prober", "teacher", "practice", "demoBuilder"] as const) {
 		for (const segment of listSourceSegments(agent)) paths.add(segment.path);
 	}
+	for (const segment of effectiveSideChatPromptSegments()) paths.add(segment.path);
 	return [...paths].sort();
 }

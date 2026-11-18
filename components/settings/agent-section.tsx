@@ -240,10 +240,11 @@ interface PromptView {
 	teacher: SegmentInfo[];
 	practice: SegmentInfo[];
  demoBuilder?: SegmentInfo[];
+ sideChat?: SegmentInfo[];
 }
 
 export interface PromptSection {
-	id: "teacher" | "prober" | "practice" | "shared" | "demoBuilder";
+	id: "teacher" | "prober" | "practice" | "shared" | "demoBuilder" | "sideChat";
 	label: string;
 	segments: PromptRow[];
 }
@@ -252,26 +253,27 @@ export interface PromptSection {
  *  Usage is derived from the API's actual per-agent membership, never a
  *  second copy of the runtime's Practice shared-fragment allowlist.
  *  Pure — exported for tests. */
-export function sectionedSegments(view: { prober: SegmentInfo[]; teacher: SegmentInfo[]; practice?: SegmentInfo[]; demoBuilder?: SegmentInfo[] }): PromptSection[] {
+export function sectionedSegments(view: { prober: SegmentInfo[]; teacher: SegmentInfo[]; practice?: SegmentInfo[]; demoBuilder?: SegmentInfo[]; sideChat?: SegmentInfo[] }): PromptSection[] {
 	const agents = [
 		{ id: "teacher", label: "Teacher" },
 		{ id: "prober", label: "Prober" },
 		{ id: "practice", label: "Practice" },
 	] as const;
+	const members = [...agents, ...(view.sideChat ? [{ id: "sideChat" as const, label: "Side questions" }] : [])];
 	const shared = new Map<string, SegmentInfo>();
-	for (const { id } of agents) {
+	for (const { id } of members) {
 		for (const segment of view[id] ?? []) {
 			if (segment.shared && !shared.has(segment.path)) shared.set(segment.path, segment);
 		}
 	}
 	return [
 		...(view.demoBuilder ? [{ id: "demoBuilder" as const, label: "Demos & visuals", segments: view.demoBuilder }] : []),
-		...agents.map(({ id, label }) => ({ id, label, segments: (view[id] ?? []).filter((s) => !s.shared) })),
+		...members.map(({ id, label }) => ({ id, label, segments: (view[id] ?? []).filter((s) => !s.shared) })),
 		{
 			id: "shared",
 			label: "Shared",
 			segments: [...shared.values()].map((segment) => {
-				const users = agents.filter(({ id }) => (view[id] ?? []).some((s) => s.path === segment.path)).map(({ label }) => label);
+				const users = members.filter(({ id }) => (view[id] ?? []).some((s) => s.path === segment.path)).map(({ label }) => label);
 				const usage = users.length > 1 ? `${users.slice(0, -1).join(", ")} and ${users.at(-1)}` : users[0];
 				return { ...segment, usageHint: `Used by ${usage}` };
 			}),
