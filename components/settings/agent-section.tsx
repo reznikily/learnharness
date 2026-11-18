@@ -26,9 +26,9 @@
  * Search engine (search wave, 2026-09-20, owner: no default — an engine
  * is live iff its key is present; with a key the engine AUTO-activates,
  * the explicit choice is only a preference between live engines): a row
- * in the Tools group, Tavily / Brave via the same shared-menu look, with
+ * in the Tools group, with the same shared-menu look and
  * the live reason line from /api/search. No engine key at all → the row
- * grays whole-row (a choice without a key would only BLOCK the other
+ * grays whole-row (a choice without a key would only BLOCK another
  * engine's auto-activation).
  *
  * Tools — the owner's final list (2026-09-19): research, demo, visual, pdf.
@@ -41,7 +41,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { CacheRetention } from "@earendil-works/pi-ai";
+import { CacheRetentionMenu, cacheRetentionLabel } from "./cache-retention-menu.tsx";
 import { MenuShell } from "@/components/menu-shell";
+import { useInteractionLayers } from "@/components/interaction-layers";
 import { useSettingsSaved } from "@/components/settings-signal";
 import { defaultOrderLevel, populateLevel } from "@/components/thinking-default";
 import { useModelCatalog } from "@/components/model-catalog";
@@ -50,12 +53,15 @@ import type React from "react";
 import {
 	COMPACTION_THRESHOLD_FLOOR,
 	MODEL_SLOTS,
+	SEARCH_ENGINES,
 	resolveSettings,
+	isFileAccessFolder,
 	type AgentSettings,
 	type CompactionSettings,
 	type GraphSettings,
 	type ModelSlotName,
 	type ModelsSettings,
+	type SearchEngineId,
 } from "@/src/core";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { prettyModel } from "@/components/usage-format";
@@ -74,9 +80,6 @@ const SLOT_META: Record<ModelSlotName | "demoBuilder", { label: string; roster: 
 	vision: { label: "Vision", roster: "The assistant that reads PDFs" },
 };
 
-/** The search engines this wave ships (src/core/search.ts) + their labels. */
-const SEARCH_ENGINES = ["tavily", "brave"] as const;
-
 /** The owner's final toggleable-tool list (confirm with the user before
  *  changing — the Teacher stream settled this 2026-09-19). */
 export const TOGGLE_TOOLS = ["research", "demo", "visual", "pdf"] as const;
@@ -92,10 +95,67 @@ interface SegmentInfo {
 	shared: boolean;
 }
 
+type PromptRow = SegmentInfo & { usageHint?: string };
+
 /** Compose: one tool toggled, the rest of the section carried verbatim.
  *  Pure — exported for tests. */
 export function composeTool(agent: AgentSettings | undefined, id: string, on: boolean): AgentSettings {
 	return { ...agent, tools: { ...agent?.tools, [id]: on } };
+}
+
+/** A file-access folder entry the server will accept: absolute (POSIX or
+ *  Windows drive/UNC) or "~"-anchored. Pure — exported for tests. */
+export function isFolderEntry(folder: string): boolean { return isFileAccessFolder(folder); }
+
+/** The switch changes ONLY restriction, never discards saved folders. */
+export function composeFileRestriction(agent: AgentSettings | undefined, restricted: boolean): AgentSettings {
+	return { ...agent, fileAccess: { restricted, folders: agent?.fileAccess?.folders ?? [] } };
+}
+
+/** Compose: add one allowed folder (trimmed; duplicates and invalid entries
+ *  are no-ops). Pure — exported for tests. */
+export function composeAddFolder(agent: AgentSettings | undefined, folder: string): AgentSettings {
+	const next = folder.trim();
+	const folders = agent?.fileAccess?.folders ?? [];
+	const restricted = agent?.fileAccess?.restricted ?? false;
+	if (!isFolderEntry(next) || folders.includes(next)) return { ...agent, fileAccess: { restricted, folders } };
+	return { ...agent, fileAccess: { restricted, folders: [...folders, next] } };
+}
+
+/** Removing the last folder NEVER changes the restriction switch. */
+export function composeRemoveFolder(agent: AgentSettings | undefined, folder: string): AgentSettings {
+	return { ...agent, fileAccess: { restricted: agent?.fileAccess?.restricted ?? false, folders: (agent?.fileAccess?.folders ?? []).filter((f) => f !== folder) } };
+}
+
+/** Parse the numeric draft and compose the WHOLE agent section. Empty
+ *  removes the override; invalid input never writes, rounds, or clamps.
+ *  Pure — exported for tests. */
+export function composeWorkerRequestConcurrency(
+	agent: AgentSettings | undefined,
+	value: string,
+): { ok: true; settings: AgentSettings } | { ok: false; error: string } {
+	const next = { ...agent };
+	const draft = value.trim();
+	if (draft === "") {
+		delete next.workerRequestConcurrency;
+		return { ok: true, settings: next };
+	}
+	const invalid = { ok: false as const, error: "Enter a positive, safely representable whole number." };
+	const concurrency = Number(draft);
+	if (!Number.isSafeInteger(concurrency) || concurrency <= 0) return invalid;
+	// Preserve native decimal/exponent syntax, but check fractional digits
+	// BEFORE accepting Number's result: e.g. 8.0000000000000001 rounds to 8.
+	// Trailing coefficient zeroes cancel negative decimal places exactly;
+	// this needs no arbitrary-precision arithmetic or unbounded powers.
+	const decimal = draft.match(/^\+?(\d+(?:\.\d*)?|\.\d+)(?:e([+-]?\d+))?$/i);
+	if (!decimal) return invalid;
+	const mantissa = decimal[1]!;
+	const fractionalPlaces = mantissa.split(".")[1]?.length ?? 0;
+	const coefficient = mantissa.replace(".", "");
+	const trailingZeroes = coefficient.length - coefficient.replace(/0+$/, "").length;
+	if (Number(decimal[2] ?? 0) - fractionalPlaces + trailingZeroes < 0) return invalid;
+	next.workerRequestConcurrency = concurrency;
+	return { ok: true, settings: next };
 }
 
 /** The quizzing mechanics (owner 2026-09-27): a segmented control, not a
@@ -133,10 +193,19 @@ export function composeSlotModel(
 		return next;
 	}
 	next[slot] = {
+		...(prev?.cacheRetention !== undefined ? { cacheRetention: prev.cacheRetention } : {}),
 		...(provider && id ? { model: { provider, id } } : prev?.model ? { model: prev.model } : {}),
 		...(thinking ? { thinkingLevel: thinking as ThinkingLevel } : {}),
 	};
 	return next;
+}
+
+/** Retention is slot-only; selecting Pi default removes the field entirely. */
+export function composeSlotCacheRetention(models: ModelsSettings | undefined, slot: ModelSlotName, value: CacheRetention | undefined): ModelsSettings {
+	const next = { ...models?.[slot] };
+	if (value === undefined) delete next.cacheRetention;
+	else next.cacheRetention = value;
+	return { ...models, [slot]: next };
 }
 
 /** Compose: the search-engine preference. null = the explicit pin is
@@ -144,7 +213,7 @@ export function composeSlotModel(
  *  Pure — exported for tests. */
 export function composeSearchEngine(
 	agent: AgentSettings | undefined,
-	engine: (typeof SEARCH_ENGINES)[number] | null,
+	engine: SearchEngineId | null,
 ): AgentSettings {
 	if (engine === null) {
 		if (!agent?.search) return { ...agent };
@@ -176,32 +245,36 @@ interface PromptView {
 export interface PromptSection {
 	id: "teacher" | "prober" | "practice" | "shared" | "demoBuilder";
 	label: string;
-	/** The one header that earns a hint: "Shared" alone is not
-	 *  self-evident. Teacher/Prober are. */
-	hint?: string;
-	segments: SegmentInfo[];
+	segments: PromptRow[];
 }
 
-/** Split the server's per-agent segment lists into the owner's three
- *  sections. The server contract returns the shared segments in BOTH
- *  lists (same paths, same content) — the shared chunks are listed ONCE
- *  here (taken from the teacher list; identical by construction), in
- *  assembly order: the base file, then the shared fragments sorted. The
- *  agents' own chunks keep their lists' order — which IS the prompt
- *  assembly order (numeric-prefix filename sort). Pure — exported for
- *  tests. */
+/** Keep each agent's own assembly order, then list shared chunks once.
+ *  Usage is derived from the API's actual per-agent membership, never a
+ *  second copy of the runtime's Practice shared-fragment allowlist.
+ *  Pure — exported for tests. */
 export function sectionedSegments(view: { prober: SegmentInfo[]; teacher: SegmentInfo[]; practice?: SegmentInfo[]; demoBuilder?: SegmentInfo[] }): PromptSection[] {
-	const own = (who: "prober" | "teacher") => view[who].filter((s) => !s.shared);
+	const agents = [
+		{ id: "teacher", label: "Teacher" },
+		{ id: "prober", label: "Prober" },
+		{ id: "practice", label: "Practice" },
+	] as const;
+	const shared = new Map<string, SegmentInfo>();
+	for (const { id } of agents) {
+		for (const segment of view[id] ?? []) {
+			if (segment.shared && !shared.has(segment.path)) shared.set(segment.path, segment);
+		}
+	}
 	return [
- ...(view.demoBuilder ? [{id:"demoBuilder" as const,label:"Demos & visuals",segments:view.demoBuilder}] : []),
-		{ id: "teacher", label: "Teacher", segments: own("teacher") },
-		{ id: "prober", label: "Prober", segments: own("prober") },
-		...(view.practice ? [{ id: "practice" as const, label: "Practice", segments: view.practice.filter(s => !s.shared) }] : []),
+		...(view.demoBuilder ? [{ id: "demoBuilder" as const, label: "Demos & visuals", segments: view.demoBuilder }] : []),
+		...agents.map(({ id, label }) => ({ id, label, segments: (view[id] ?? []).filter((s) => !s.shared) })),
 		{
 			id: "shared",
 			label: "Shared",
-			hint: "Used by both agents",
-			segments: view.teacher.filter((s) => s.shared),
+			segments: [...shared.values()].map((segment) => {
+				const users = agents.filter(({ id }) => (view[id] ?? []).some((s) => s.path === segment.path)).map(({ label }) => label);
+				const usage = users.length > 1 ? `${users.slice(0, -1).join(", ")} and ${users.at(-1)}` : users[0];
+				return { ...segment, usageHint: `Used by ${usage}` };
+			}),
 		},
 	];
 }
@@ -269,6 +342,7 @@ function MenuTrigger({
 
 export function AgentSection({
 	agent,
+	fileAccessError,
 	models,
 	graph,
 	compaction,
@@ -277,6 +351,7 @@ export function AgentSection({
 	onCompactionChange,
 }: {
 	agent: AgentSettings | undefined;
+	fileAccessError?: string | null;
 	/** The `models` section (slot pins — engine-level, PUT /api/settings/models). */
 	models: ModelsSettings | undefined;
 	/** The `graph` section — READ ONLY here: the graphTools row composes its
@@ -287,20 +362,22 @@ export function AgentSection({
 	 *  behavior, not an agent-section key; owner round 14, Agent tab). */
 	compaction: CompactionSettings | undefined;
 	/** Writes the composed WHOLE agent section (replace-PUT discipline). */
-	onSectionChange: (next: AgentSettings) => void;
+	onSectionChange: (next: AgentSettings) => boolean | Promise<boolean>;
 	/** Writes the composed models section (slots — replace-PUT discipline). */
 	onModelsChange: (next: ModelsSettings) => void;
 	/** Writes the whole compaction section (replace-PUT discipline). */
-	onCompactionChange: (next: CompactionSettings) => void;
+	onCompactionChange: (next: CompactionSettings) => boolean | Promise<boolean>;
 }) {
 	const { catalog: body, failed: catalogFailed, refresh: refreshCatalog } = useModelCatalog();
 	const catalog = body?.models;
 	const slots = body?.slots;
 	/** The live search state (/api/search) — the row's reason line. */
+	const [folderInput, setFolderInput] = useState("");
+	const [folderError, setFolderError] = useState<string | null>(null);
 	const [search, setSearch] = useState<{ available: boolean; engine: string | null; reason: string } | null>(null);
 	/** Which search engines have a key (/api/keys) — the no-keys-anywhere
 	 *  state grays the row; per-engine marks ride the menu rows. */
-	const [engineKeys, setEngineKeys] = useState<Partial<Record<(typeof SEARCH_ENGINES)[number], boolean>>>({});
+	const [engineKeys, setEngineKeys] = useState<Partial<Record<SearchEngineId, boolean>>>({});
 	const [prompts, setPrompts] = useState<PromptView | null>(null);
 	const [presetBusy, setPresetBusy] = useState(false);
 	const [presetName, setPresetName] = useState("");
@@ -309,8 +386,11 @@ export function AgentSection({
 	const [segmentStatus, setSegmentStatus] = useState<string | null>(null);
 	/** One open dropdown for the whole section: which slot (or the search
 	 *  row), which kind. */
-	const [openMenu, setOpenMenu] = useState<{ target: ModelSlotName | "demoBuilder" | "search"; kind: "model" | "thinking" | "engine" } | null>(null);
+	const [openMenu, setOpenMenu] = useState<{ target: ModelSlotName | "demoBuilder" | "search"; kind: "model" | "thinking" | "engine" | "cache" } | null>(null);
+	const [advancedModels, setAdvancedModels] = useState(false);
+	const [workerConcurrencyError, setWorkerConcurrencyError] = useState<string | null>(null);
 	const menuAnchorRef = useRef<HTMLSpanElement>(null);
+	const interactions = useInteractionLayers();
 
 	const refreshSearch = () =>
 		fetch("/api/search")
@@ -340,9 +420,8 @@ export function AgentSection({
 		fetch("/api/keys")
 			.then((r) => r.json())
 			.then((body: { keys: { id: string; present: boolean }[] }) => {
-				const present: Partial<Record<(typeof SEARCH_ENGINES)[number], boolean>> = {};
-				for (const id of SEARCH_ENGINES) {
-					const envVar = id === "tavily" ? "TAVILY_API_KEY" : "BRAVE_API_KEY";
+				const present: Partial<Record<SearchEngineId, boolean>> = {};
+				for (const { id, envVar } of SEARCH_ENGINES) {
 					present[id] = body.keys.some((k) => k.id === envVar && k.present);
 				}
 				setEngineKeys(present);
@@ -366,6 +445,8 @@ export function AgentSection({
 	useEffect(() => {
 		if (openMenu === null) return;
 		const onPointerDown = (e: PointerEvent) => {
+			const testid = openMenu.target === "search" ? "search-engine-menu" : `slot-${openMenu.kind}-menu-${openMenu.target}`;
+			if (!interactions.isElementEligible(document.querySelector<HTMLElement>(`[data-testid="${testid}"]`))) return;
 			const target = e.target as Node;
 			if (menuAnchorRef.current?.contains(target)) return;
 			if (target instanceof Element && target.closest("[data-lh-menu]")) return;
@@ -374,19 +455,9 @@ export function AgentSection({
 			}
 			// else: outside the dialog — the dialog's own close handles it.
 		};
-		const onKeyDown = (e: KeyboardEvent) => {
-			if (e.key === "Escape") {
-				e.stopPropagation();
-				setOpenMenu(null);
-			}
-		};
 		document.addEventListener("pointerdown", onPointerDown);
-		document.addEventListener("keydown", onKeyDown);
-		return () => {
-			document.removeEventListener("pointerdown", onPointerDown);
-			document.removeEventListener("keydown", onKeyDown);
-		};
-	}, [openMenu]);
+		return () => document.removeEventListener("pointerdown", onPointerDown);
+	}, [openMenu, interactions]);
 
 	const hasDrafts = () => prompts && [...prompts.teacher, ...prompts.prober, ...prompts.practice].some(
 		info => segmentDraft[info.path] !== undefined && segmentDraft[info.path] !== (info.overrideText ?? ""),
@@ -425,7 +496,7 @@ export function AgentSection({
 
 		/** The search-engine menu row — label + the quiet live-key mark. */
 	const engineOption = (
-		id: (typeof SEARCH_ENGINES)[number] | "auto",
+		id: SearchEngineId | "auto",
 		label: string,
 		active: boolean,
 		live: boolean | null,
@@ -447,7 +518,7 @@ export function AgentSection({
 		</button>
 	);
 
-	const segmentRow = (info: SegmentInfo) => {
+	const segmentRow = (info: PromptRow) => {
 		const fileExists = info.overrideText !== null;
 		const open = openSegment === info.path;
 		// The Save affordance (owner ruling, refined 2026-09-26): clickable
@@ -461,7 +532,13 @@ export function AgentSection({
 			<div key={info.path} data-testid={`prompt-segment-${info.path}`}>
 				<SettingsRow
 					label={info.path}
-					hint={info.enabled ? PROMPT_IN_USE_HINT : undefined}
+					// Overhaul rulings (2026-09-26, refined): the small text
+					// states WHICH VERSION IS IN USE — nothing when the
+					// default composes (even with a saved override sitting
+					// on disk unused), "Your version is in use" when the
+					// switch is on. The switch's meaning becomes legible
+					// through this line.
+					hint={[info.usageHint, info.enabled ? PROMPT_IN_USE_HINT : undefined].filter(Boolean).join(" · ") || undefined}
 					testid={`prompt-row-${info.path}`}
 				>
 					<span className="text-xs text-muted-foreground">{fileExists ? "Override" : "Default"}</span>
@@ -516,7 +593,7 @@ export function AgentSection({
 									type="button"
 									disabled={presetBusy}
 									onClick={() => void deleteSegment(info.path)}
-									className="text-xs text-muted-foreground/70 underline-offset-2 hover:text-red-500 hover:underline"
+									className="text-xs text-muted-foreground/70 underline-offset-2 hover:text-error hover:underline"
 								>
 									Delete
 								</button>
@@ -544,6 +621,7 @@ export function AgentSection({
 	// Resolved through the SAME core resolver the server's effective
 	// settings use (the GraphSection precedent): the hint and placeholder
 	// report exactly the number the trigger waits for.
+	const resolvedAgent = resolveSettings(agent === undefined ? null : { version: 1, agent }).agent;
 	const resolvedCompaction = resolveSettings(
 		compaction === undefined ? null : { version: 1, compaction },
 	).compaction;
@@ -551,7 +629,14 @@ export function AgentSection({
 	return (
 		<>
 			<SettingsGroup label="Models" testid="group-models">
-				{catalogFailed && <p role="alert" className="text-xs text-red-400">Model catalog could not be loaded. Check the connection and retry. <button type="button" className="underline" onClick={refreshCatalog}>Retry</button></p>}
+				<button
+					type="button"
+					data-testid="models-advanced"
+					aria-expanded={advancedModels}
+					onClick={() => { setAdvancedModels(!advancedModels); setOpenMenu(null); }}
+					className="mb-1 self-start text-xs text-muted-foreground hover:text-foreground"
+				>{advancedModels ? "Hide advanced settings" : "Show advanced settings"}</button>
+				{catalogFailed && <p role="alert" className="text-xs text-error">Model catalog could not be loaded. Check the connection and retry. <button type="button" className="underline" onClick={refreshCatalog}>Retry</button></p>}
 				{([...MODEL_SLOTS, "demoBuilder"] as const).map((slot) => {
 					const override = slot === "demoBuilder" ? {model:{provider:"kimi-coding",id:"k3-256k"},thinkingLevel:"max" as const,...agent?.models?.demoBuilder} : models?.[slot];
 					const modelId = override?.model?.id ?? "";
@@ -581,7 +666,7 @@ export function AgentSection({
 							    span holding BOTH triggers of the open menu. */}
 							<span
 								ref={thisMenuOpen ? menuAnchorRef : undefined}
-								className="relative flex items-center gap-2"
+								className={`relative flex items-center gap-2 ${advancedModels ? "shrink-0" : ""}`}
 							>
 								{slot !== "strong" && <><ChatGPTBackgroundAccess provider={coord?.provider} /><NativeSubscriptionBackgroundAccess provider={coord?.provider} /></>}
 								<MenuTrigger
@@ -606,11 +691,34 @@ export function AgentSection({
 									onClick={() => setOpenMenu(thisMenuOpen === "thinking" ? null : { target: slot, kind: "thinking" })}
 									widthClass="w-20"
 								/>
+								{advancedModels && slot !== "demoBuilder" && <MenuTrigger
+									value={cacheRetentionLabel(override?.cacheRetention)}
+									emptyLabel="Cache: default"
+									ariaLabel={`${SLOT_META[slot].label} cache retention`}
+									testid={`slot-cache-${slot}`}
+									open={thisMenuOpen === "cache"}
+									disabled={!override?.model}
+									onClick={() => setOpenMenu(thisMenuOpen === "cache" ? null : { target: slot, kind: "cache" })}
+									widthClass="w-40"
+								/>}
+								{advancedModels && slot !== "demoBuilder" && thisMenuOpen === "cache" && <MenuShell
+									preferredSide="down"
+									anchorTestid={`slot-cache-${slot}`}
+									testid={`slot-cache-menu-${slot}`}
+									onClose={() => { setOpenMenu(null); return "closed"; }}
+									menuClass="flex w-80 flex-col gap-0.5 rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
+								>
+									<CacheRetentionMenu value={override?.cacheRetention} onPick={(value) => {
+										onModelsChange(composeSlotCacheRetention(models, slot, value));
+										setOpenMenu(null);
+									}} />
+								</MenuShell>}
 								{thisMenuOpen === "model" && (
 									<MenuShell
 										preferredSide="down"
 											anchorTestid={`slot-model-${slot}`}
 										testid={`slot-model-menu-${slot}`}
+										onClose={() => { setOpenMenu(null); return "closed"; }}
 										menuClass="flex w-[22rem] flex-col rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
 									>
 										<ModelMenuList
@@ -640,6 +748,7 @@ export function AgentSection({
 										preferredSide="down"
 											anchorTestid={`slot-thinking-${slot}`}
 										testid={`slot-thinking-menu-${slot}`}
+										onClose={() => { setOpenMenu(null); return "closed"; }}
 										menuClass="flex w-44 flex-col gap-0.5 rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
 									>
 										<ThinkingMenuList
@@ -659,6 +768,40 @@ export function AgentSection({
 						</SettingsRow>
 					);
 				})}
+				<SettingsRow
+					label="Concurrent worker requests"
+					hint="Maximum simultaneous background-worker model requests. Direct conversations are not limited."
+					testid="worker-request-concurrency-row"
+				>
+					<div
+						className="flex flex-col items-end gap-1"
+						onChangeCapture={() => setWorkerConcurrencyError(null)}
+						onBlurCapture={(event) => {
+							// Browsers expose incomplete numeric input (e.g. "1e")
+							// as an empty value. It is INVALID, not a blank reset.
+							if (event.target instanceof HTMLInputElement && event.target.validity.badInput) {
+								event.stopPropagation();
+								setWorkerConcurrencyError("Enter a positive, safely representable whole number.");
+							}
+						}}
+					>
+						<CommitInput
+							type="number"
+							min={1}
+							step={1}
+							value={String(agent?.workerRequestConcurrency ?? "")}
+							placeholder={String(resolvedAgent.workerRequestConcurrency)}
+							ariaLabel="Concurrent worker requests"
+							testid="input-worker-request-concurrency"
+							onCommit={(value) => {
+								const next = composeWorkerRequestConcurrency(agent, value);
+								setWorkerConcurrencyError(next.ok ? null : next.error);
+								return next.ok ? onSectionChange(next.settings) : false;
+							}}
+						/>
+						{workerConcurrencyError && <p role="alert" className="text-xs text-error">{workerConcurrencyError}</p>}
+					</div>
+				</SettingsRow>
 			</SettingsGroup>
 
 			<SettingsGroup label="Tools" testid="group-tools">
@@ -741,8 +884,50 @@ export function AgentSection({
 					</SettingsRow>
 				))}
 				{(() => {
+					const folders = agent?.fileAccess?.folders ?? [];
+					const restricted = Boolean(fileAccessError) || agent?.fileAccess?.restricted === true;
+					const effectiveAgent = fileAccessError ? { ...agent, fileAccess: { restricted: true, folders } } : agent;
+					const addFolder = () => {
+						const next = folderInput.trim();
+						if (!isFolderEntry(next)) { setFolderError("Enter an absolute path or ~/folder."); return; }
+						if (!folders.includes(next)) onSectionChange(composeAddFolder(effectiveAgent, next));
+						setFolderInput("");
+						setFolderError(null);
+					};
+					return (
+						<div data-testid="file-access-row" className="flex flex-col gap-2">
+							<SettingsRow label="File access" hint={!restricted
+								? "Broad local source access, except protected locations"
+								: folders.length ? "Only listed folders and subfolders."
+									: "Restricted: no folders allowed. Add a folder to enable access."}>
+								<div className="flex items-center gap-2 text-xs">
+									<span>Restrict to listed folders</span>
+									<Toggle checked={restricted} label="Restrict to listed folders" onChange={(on) => onSectionChange(composeFileRestriction(effectiveAgent, on))} />
+								</div>
+							</SettingsRow>
+							{fileAccessError && <p role="alert" data-testid="file-access-config-error" className="text-xs text-error">{fileAccessError}</p>}
+							<div className="flex gap-2 pl-3">
+								<input value={folderInput} aria-label="Allowed folder path" data-testid="file-access-add" placeholder="Absolute path or ~/folder"
+									onChange={(event) => { setFolderInput(event.target.value); setFolderError(null); }}
+									onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addFolder(); } }}
+									className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2 py-1 font-ui text-xs" />
+								<button type="button" data-testid="file-access-add-button" disabled={!folderInput.trim()} onClick={addFolder} className="rounded-sm border border-border px-2 text-xs disabled:opacity-40">Add folder</button>
+							</div>
+							{folderError && <p role="alert" data-testid="file-access-input-error" className="pl-3 text-xs text-error">{folderError}</p>}
+							{folders.map((folder) => (
+								<div key={folder} data-testid="file-access-folder" className="flex items-center justify-between gap-4 pl-3 text-xs">
+									<span title={folder} className="min-w-0 truncate font-ui text-muted-foreground">{folder}</span>
+									<button type="button" aria-label={`Remove ${folder}`} data-testid="file-access-remove"
+										onClick={() => onSectionChange(composeRemoveFolder(effectiveAgent, folder))}
+										className="rounded-sm px-1.5 text-muted-foreground hover:text-foreground">Remove</button>
+								</div>
+							))}
+						</div>
+					);
+				})()}
+				{(() => {
 					const engine = agent?.search?.engine ?? null;
-					const anyKey = engineKeys.tavily === true || engineKeys.brave === true;
+					const anyKey = SEARCH_ENGINES.some(({ id }) => engineKeys[id] === true);
 					const open = openMenu?.target === "search";
 					return (
 						<SettingsRow
@@ -753,7 +938,7 @@ export function AgentSection({
 						>
 							<span ref={open ? menuAnchorRef : undefined} className="relative flex items-center gap-2">
 								<MenuTrigger
-									value={engine === "tavily" ? "Tavily" : engine === "brave" ? "Brave" : ""}
+									value={SEARCH_ENGINES.find(({ id }) => id === engine)?.label ?? ""}
 									emptyLabel="Automatic"
 									ariaLabel="Search engine"
 									testid="search-engine-trigger"
@@ -767,14 +952,15 @@ export function AgentSection({
 										preferredSide="down"
 											anchorTestid="search-engine-trigger"
 										testid="search-engine-menu"
+										onClose={() => { setOpenMenu(null); return "closed"; }}
 										menuClass="flex w-44 flex-col gap-0.5 rounded-xl border border-border bg-card p-2 text-xs shadow-xl"
 									>
 										{engineOption("auto", "Automatic", engine === null, null, () => {
 											onSectionChange(composeSearchEngine(agent, null));
 											setOpenMenu(null);
 										})}
-										{SEARCH_ENGINES.map((id) =>
-											engineOption(id, id === "tavily" ? "Tavily" : "Brave", engine === id, engineKeys[id] ?? false, () => {
+										{SEARCH_ENGINES.map(({ id, label }) =>
+											engineOption(id, label, engine === id, engineKeys[id] ?? false, () => {
 												onSectionChange(composeSearchEngine(agent, id));
 												setOpenMenu(null);
 											}),
@@ -803,19 +989,29 @@ export function AgentSection({
 							// Empty = factory default (the budget row's discipline):
 							// absence is the unset for numbers.
 							if (v === "") {
-								onCompactionChange({ ...compaction, thresholdTokens: undefined });
-								return;
+								return onCompactionChange({ ...compaction, thresholdTokens: undefined });
 							}
 							const n = Number(v);
-							if (!Number.isFinite(n) || n <= 0) return; // bad input: no write
+							if (!Number.isFinite(n) || n <= 0) return false; // bad input: no write
 							// Mirror the server floor (anti-churn: each compaction
 							// keeps a ~20k-token tail); no ceiling — the effective
 							// trigger is min(threshold, contextWindow − 16k) anyway.
-							onCompactionChange({
+							return onCompactionChange({
 								...compaction,
 								thresholdTokens: Math.max(COMPACTION_THRESHOLD_FLOOR, Math.round(n)),
 							});
 						}}
+					/>
+				</SettingsRow>
+				<SettingsRow
+					label="Include reasoning in token estimates (OpenAI Responses only)"
+					hint="Use saved output-token usage to account for replayed reasoning on matching OpenAI Responses models. Off uses the original text-based estimate."
+					testid="compaction-row-reasoning"
+				>
+					<Toggle
+						label="Include reasoning in token estimates (OpenAI Responses only)"
+						checked={resolvedCompaction.includeReasoning}
+						onChange={(includeReasoning) => onCompactionChange({ ...compaction, includeReasoning })}
 					/>
 				</SettingsRow>
 			</SettingsGroup>
@@ -850,18 +1046,13 @@ export function AgentSection({
 					<p className="text-xs text-muted-foreground/70">Loading prompt segments…</p>
 				) : (
 					<div className="flex flex-col gap-4">
-						{/* The owner's ruled order (2026-09-26): Teacher first,
-						    then Prober, then Shared LAST — shared chunks once
-						    (deduplicated), each section in prompt-assembly
-						    order. */}
+						{/* Teacher, Prober, Practice, Shared — shared chunks once,
+						    each agent's own section in prompt-assembly order. */}
 						{sectionedSegments(prompts).map((section) => (
 							<div key={section.id} data-testid={`prompt-section-${section.id}`}>
 								<p className="mb-1 text-xs uppercase tracking-widest text-muted-foreground/70">
 									{section.label}
 								</p>
-								{section.hint && (
-									<p className="mb-1 text-xs text-muted-foreground/60">{section.hint}</p>
-								)}
 								<div className="flex flex-col gap-2">
 									{section.segments.map((info) => segmentRow(info))}
 								</div>

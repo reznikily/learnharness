@@ -1,5 +1,6 @@
 // @ts-nocheck — real Chat with synthetic read-only API responses; never shipped.
 import React from 'react';
+import { resolveTheme } from '../../src/core';
 import {createRoot} from 'react-dom/client';
 import {Chat} from '../../components/chat';
 import {AppShell, SidebarProvider} from '../../components/sidebar';
@@ -17,6 +18,7 @@ window.fetch=async(input,init)=>{
  const path=String(input);if(init?.method&&init.method!=='GET')throw Error('Mutation blocked: '+path);
  let body:any={};
  if(path==='/api/chats')body={chats:[{id:'synthetic',title:'Synthetic',updatedAt:'2026-10-27T00:00:00Z',createdAt:'2026-10-27T00:00:00Z',kind:'teach'}]};
+ else if(path.endsWith('/side-chats'))body={threads:[],answering:{}};
  else if(path.startsWith('/api/chats/'))body={messages,inFlight:false};
  else if(path.startsWith('/api/jobs'))body={jobs:[job]};
  else if(path==='/api/activity')body={jobs:[],extractions:[]};
@@ -25,4 +27,4 @@ window.fetch=async(input,init)=>{
  else if(path==='/api/graph/status')body={enabled:false};
  return Response.json(body);
 };
-createRoot(document.getElementById('root')!).render(<ServerEventsProvider connect={()=>({close(){},onOpen(){},onEvent(){}})}><AppearanceProvider><SidebarProvider><ActivityProvider><AppShell><Chat chatId="synthetic" title="Demo UX probe" initialMessages={messages as never} initialConfigured/></AppShell></ActivityProvider></SidebarProvider></AppearanceProvider></ServerEventsProvider>);
+createRoot(document.getElementById('root')!).render(<ServerEventsProvider connect={()=>({close(){},onOpen(){},onEvent(){}})}><AppearanceProvider initialAppearance={undefined} initialTheme={resolveTheme(undefined)}><SidebarProvider><ActivityProvider><AppShell><Chat chatId="synthetic" title="Demo UX probe" initialMessages={messages as never} initialConfigured/></AppShell></ActivityProvider></SidebarProvider></AppearanceProvider></ServerEventsProvider>);

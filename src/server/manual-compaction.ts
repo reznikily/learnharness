@@ -23,7 +23,7 @@ export async function compactChatSession(chatId: string): Promise<Response> {
 	let engine;
 	try {
 		// An explicit manual request uses foreground subscription permission.
-		engine = piEngineForSpec(spec, false);
+		engine = piEngineForSpec(spec, false, undefined, () => stores.settingsStore.readSettings()?.models?.strong?.cacheRetention);
 	} catch {
 		return Response.json({ error: "The selected session model is unavailable" }, { status: 503 });
 	}
@@ -33,6 +33,7 @@ export async function compactChatSession(chatId: string): Promise<Response> {
 		modelId: `${engine.model.provider}:${engine.model.id}`,
 		kind: record.kind === "practice" ? "practice" : hasProbeDone(record.messages) ? "teach" : "probe",
 		thresholdTokens: 0,
+		includeReasoning: effectiveSettings().compaction.includeReasoning,
 		systemPromptTokens: Math.ceil(composeInstructions(record.kind === "practice" ? "practice" : "teacher", {}, activePromptTexts()).length / 4),
 	}, chatId);
 }

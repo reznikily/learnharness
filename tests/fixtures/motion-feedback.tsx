@@ -1,5 +1,6 @@
 // @ts-nocheck — real Chat with a scripted in-page server; never shipped.
 import React from 'react';
+import { resolveTheme } from '../../src/core';
 import {createRoot} from 'react-dom/client';
 import {Chat} from '../../components/chat';
 import {AppShell, SidebarProvider} from '../../components/sidebar';
@@ -32,6 +33,7 @@ window.fetch=async(input,init)=>{
   return new Response(new ReadableStream({async start(c){const e=new TextEncoder();for(const ev of events){c.enqueue(e.encode(`data: ${JSON.stringify(ev)}\n\n`));await new Promise(r=>setTimeout(r,20));}srv.messages.push(...(srv.afterStream??[]).splice(0));c.enqueue(e.encode('data: {"type":"turn-settled"}\n\n'));c.close();}}),{headers:{'Content-Type':'text/event-stream'}});
  }
  if(path==='/api/chats')body={chats:[{id:'synthetic',title:'Synthetic',updatedAt:'2026-10-27T00:00:00Z',createdAt:'2026-10-27T00:00:00Z',kind:'teach'}]};
+ else if(path.endsWith('/side-chats'))body={threads:[],answering:{}};
  else if(path.startsWith('/api/chats/'))body={messages:srv.messages,turnInFlight:false};
  else if(path.startsWith('/api/jobs'))body={jobs:srv.jobs,turnInFlight:false};
  else if(path==='/api/activity')body={jobs:[],extractions:[]};
@@ -40,4 +42,4 @@ window.fetch=async(input,init)=>{
  else if(path==='/api/graph/status')body={enabled:false};
  return Response.json(body);
 };
-window.__mount=()=>createRoot(document.getElementById('root')).render(<ServerEventsProvider connect={()=>({close(){},onOpen(){},onEvent(n,cb){listeners[n]=cb;}})}><AppearanceProvider><SidebarProvider><ActivityProvider><AppShell><Chat chatId="synthetic" title="Motion" initialMessages={srv.messages} initialConfigured/></AppShell></ActivityProvider></SidebarProvider></AppearanceProvider></ServerEventsProvider>);
+window.__mount=()=>createRoot(document.getElementById('root')).render(<ServerEventsProvider connect={()=>({close(){},onOpen(){},onEvent(n,cb){listeners[n]=cb;}})}><AppearanceProvider initialAppearance={undefined} initialTheme={resolveTheme(undefined)}><SidebarProvider><ActivityProvider><AppShell><Chat chatId="synthetic" title="Motion" initialMessages={srv.messages} initialConfigured/></AppShell></ActivityProvider></SidebarProvider></AppearanceProvider></ServerEventsProvider>);

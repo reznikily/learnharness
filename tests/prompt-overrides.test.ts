@@ -43,7 +43,8 @@ const { promptOverrides } = await import("../src/store/prompt-overrides.ts");
 // Route-level pins drive the actual app/api handlers (framework-free
 // Request/Response), isolated under the same temp LH_DATA_DIR.
 const { PUT: putSettingsSection } = await import("../app/api/settings/[section]/route.ts");
-const { DELETE: deletePromptText } = await import("../app/api/settings/prompts/[...segment]/route.ts");
+const { PUT: putPromptText, DELETE: deletePromptText } = await import("../app/api/settings/prompts/[...segment]/route.ts");
+const { GET: getPromptSegments } = await import("../app/api/settings/prompts/route.ts");
 const { readSettingsRecord } = await import("../src/server/index.ts");
 
 /** The REAL repo prompts dir this suite must never touch (read-only). */
@@ -184,6 +185,7 @@ describe("the source-derived segment list", () => {
 				"shared/20-question-tools.md",
 				"shared/25-confidence.md",
 				"shared/30-learner-files.md",
+				"shared/35-side-conversations.md",
 				"shared/40-formatting.md",
 			],
 		);
@@ -405,6 +407,64 @@ describe("an orphaned ON heals to OFF on write — never a 400 (the invariant: a
 			assert.equal(record.settings.agent?.prompts?.[SEGMENT], true, "a real ON+file write keeps the switch on");
 		} finally {
 			promptOverrides.deleteOverride(SEGMENT);
+		}
+	});
+});
+
+describe("Practice settings API and effective prompt loading", () => {
+	it("GET exposes the actual source-discovered Practice fragments and shared subset", async () => {
+		const response = await getPromptSegments();
+		assert.equal(response.status, 200);
+		const view = await response.json();
+		for (const kind of ["teacher", "prober", "practice"] as const) {
+			assert.deepEqual(view[kind], effectivePromptSegments(kind, readSettingsRecord()?.agent?.prompts ?? {}));
+		}
+		assert.deepEqual(view.practice.map((s: { path: string }) => s.path), [
+			"practice/00-base.md", "practice/10-doctrine.md", "practice/20-visuals.md",
+			"shared/10-voice.md", "shared/15-accuracy.md", "shared/16-mental-model.md", "shared/35-side-conversations.md", "shared/40-formatting.md",
+		]);
+		assert.ok(!view.practice.some((s: { path: string }) => s.path === "system-prompt.md"));
+	});
+
+	for (const segment of ["practice/00-base.md", "practice/10-doctrine.md", "practice/20-visuals.md"]) {
+		it(`${segment}: preset activation and removal preserve other agents`, async () => {
+			const { updatePromptPresets, activePromptTexts } = await import("../src/store/prompt-presets.ts");
+			updatePromptPresets({ action: "activate", id: null });
+			const defaults = Object.fromEntries((["teacher", "prober", "practice"] as const).map(kind => [kind, teacherAgent.composeInstructions(kind, {}, {})]));
+			const state = updatePromptPresets({ action: "create", name: segment });
+			const id = state.activeId!;
+			const text = `SYNTHETIC PRACTICE OVERRIDE ${segment}`;
+			try {
+				updatePromptPresets({ action: "write", id, path: segment, text });
+				for (const on of [true, false, true]) {
+					updatePromptPresets({ action: "activate", id: on ? id : null });
+					const view = await (await getPromptSegments()).json();
+					assert.equal(view.practice.find((s: { path: string }) => s.path === segment).enabled, on);
+					const expected = effectivePromptSegments("practice", {}, {}).map(s => (on && s.path === segment ? text : s.sourceText).trim()).filter(Boolean).join("\n\n---\n\n");
+					assert.equal(teacherAgent.composeInstructions("practice", {}, activePromptTexts()), expected);
+					for (const kind of ["teacher", "prober"] as const) assert.equal(teacherAgent.composeInstructions(kind, {}, activePromptTexts()), defaults[kind]);
+				}
+				updatePromptPresets({ action: "removeText", id, path: segment });
+				assert.equal(teacherAgent.composeInstructions("practice", {}, activePromptTexts()), defaults.practice);
+				const view = await (await getPromptSegments()).json();
+				assert.equal(view.practice.find((s: { path: string }) => s.path === segment).enabled, false);
+			} finally { updatePromptPresets({ action: "delete", id }); }
+		});
+	}
+
+	it("shared edits reach exactly their runtime members, never adding the teaching base to Practice", () => {
+		const defaults = Object.fromEntries((["teacher", "prober", "practice"] as const).map((kind) => [kind, teacherAgent.composeInstructions(kind)]));
+		for (const segment of ["system-prompt.md", "shared/10-voice.md", "shared/20-question-tools.md"]) {
+			const text = `SYNTHETIC SHARED OVERRIDE ${segment}`;
+			promptOverrides.writeOverride(segment, text);
+			try {
+				for (const kind of ["teacher", "prober", "practice"] as const) {
+					const member = effectivePromptSegments(kind, {}).some((s) => s.path === segment);
+					const composed = teacherAgent.composeInstructions(kind, { [segment]: true });
+					assert.equal(composed.includes(text), member);
+					if (!member) assert.equal(composed, defaults[kind]);
+				}
+			} finally { promptOverrides.deleteOverride(segment); }
 		}
 	});
 });
