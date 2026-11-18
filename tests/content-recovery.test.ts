@@ -114,3 +114,32 @@ test("recovery converges after one pass, including multiple debris characters", 
 		assert.equal(repairMathForDisplay(once), once);
 	}
 });
+
+test("tool-authored Refal fence with literal newlines recovers as a code block", () => {
+ const source = String.raw`В лабе есть функция:\n\n\`\`\`refal\nVariable {\n  = None;\n  s.Char e.Rest,\n    <Letters> : e.Before s.Char e.After\n    = <Variable e.Rest>;\n  e.Invalid = <Invalid>;\n}\n\`\`\`\n\nЧто вернёт вызов?`.replaceAll('\\`', '`');
+ const expected = source.replaceAll('\\n', '\n');
+ assert.equal(repairMathForDisplay(source), expected);
+ assert.equal(repairMathForDisplay(expected), expected);
+});
+
+test("encoded fences retain string, regex and LaTeX escapes", () => {
+ const body = String.raw`const text = "line\nnext";\nconst regex = /\n+/;\nconst tex = "\\nabla";`;
+ const source = '```js\\n' + body + '\\n```';
+ const expected = '```js\n' + String.raw`const text = "line\nnext";` + '\n' + String.raw`const regex = /\n+/;` + '\n' + String.raw`const tex = "\\nabla";` + '\n```';
+ assert.equal(repairMathForDisplay(source), expected);
+ assert.equal(repairMathForDisplay(expected), expected);
+});
+
+test("correct fences, literal examples and incomplete encoded fences remain unchanged", () => {
+ for (const source of [
+  '```js\nconst x = "a\\n b";\n```',
+  '``example ```js\\nfoo\\n``` ``',
+  '```text\n```js\\nfoo\\n```\n```',
+  '```js\\nconst x = 1;',
+  '`\\n` and $\\nabla f$',
+ ]) assert.equal(repairMathForDisplay(source), source);
+});
+
+ test("encoded TeX fence keeps n-prefixed commands", () => {
+  assert.equal(repairMathForDisplay('```tex\\n' + String.raw`\nabla f \neq 0` + '\\n```'), '```tex\n' + String.raw`\nabla f \neq 0` + '\n```');
+ });

@@ -25,6 +25,7 @@ process.env.LH_DATA_DIR = TMP_DATA;
 const { chatStore } = await import("../src/store/chats.ts");
 const {
 	ensureCompacted,
+	manuallyCompact,
 	kickCompaction,
 	awaitCompaction,
 	compactionInFlight,
@@ -360,5 +361,62 @@ describe("the compaction service", () => {
 		await ensureCompacted(depsOf(chatId, 40_000), chatId);
 		assert.ok(activeCompactionOf(chatStore.getChat(chatId)!.messages));
 		assert.equal(summarizeCalls, before + 1);
+	});
+});
+
+// Manual runs must bypass only the size trigger, never history or concurrency guards.
+describe("manual compaction", () => {
+	it("compacts below the auto threshold, preserving every original message and recording usage", async () => {
+		const id = overThresholdChat("manual");
+		const before = chatStore.getChat(id)!;
+		const response = await manuallyCompact(depsOf(id, 10_000_000), id);
+		assert.equal(response.status, 200);
+		assert.equal((await response.json()).compacted, true);
+		const after = chatStore.getChat(id)!;
+		assert.deepEqual(after.messages.slice(0, -1), before.messages);
+		assert.equal(after.turns!.length, (before.turns?.length ?? 0) + 1);
+		assert.ok(projectedContextTokens(after.messages, 100) < projectedContextTokens(before.messages, 100));
+		const repeat = await manuallyCompact(depsOf(id, 10_000_000), id);
+		assert.equal((await repeat.json()).compacted, false);
+	});
+
+	it("refuses a running turn and unknown chats without modifying history", async () => {
+		const { beginTurn, endTurn } = await import("../src/server/turn-liveness.ts");
+		const id = overThresholdChat("busy");
+		const before = chatStore.getChat(id);
+		beginTurn(id);
+		try {
+			assert.equal((await manuallyCompact(depsOf(id, 1), id)).status, 409);
+			assert.deepEqual(chatStore.getChat(id), before);
+		} finally { endTurn(id); }
+		assert.equal((await manuallyCompact(depsOf("missing", 1), "missing")).status, 404);
+	});
+
+	it("rejects simultaneous manual runs and never overwrites messages added during summary generation", async () => {
+		const id = overThresholdChat("concurrent");
+		let release!: () => void;
+		let entered!: () => void;
+		const gate = new Promise<void>((resolve) => { release = resolve; });
+		const started = new Promise<void>((resolve) => { entered = resolve; });
+		const deps = depsOf(id, 1);
+		const run = manuallyCompact({ ...deps, summarize: async (prompt, engine) => {
+			entered(); await gate; return deps.summarize!(prompt, engine);
+		} }, id);
+		await started;
+		assert.equal((await manuallyCompact(deps, id)).status, 409);
+		const newer = [...chatStore.getChat(id)!.messages, newUserMessage("arrived during summary")];
+		chatStore.saveMessages(id, newer);
+		release();
+		assert.equal((await run).status, 502);
+		assert.deepEqual(chatStore.getChat(id)!.messages, newer);
+		assert.equal(compactionInFlight(id), false);
+	});
+
+	it("reports failed summaries honestly and leaves the record intact", async () => {
+		const id = overThresholdChat("failed");
+		const before = chatStore.getChat(id);
+		const response = await manuallyCompact({ ...depsOf(id, 1), summarize: async () => { throw new Error("synthetic failure"); } }, id);
+		assert.equal(response.status, 502);
+		assert.deepEqual(chatStore.getChat(id), before);
 	});
 });

@@ -175,9 +175,47 @@ export function outsideTexComments(body: string, transform: (part: string) => st
 	out.push(transform(body.slice(from))); return out.join("");
 }
 
+/** Only complete, single-physical-line fences with encoded framing qualify.
+ * Real Markdown code (including examples of broken fences) remains literal. */
+function recoverEncodedCodeFences(text: string): string {
+	if (!text.includes("\\n")) return text;
+	const literals = literalRanges(text);
+	return text.replace(/((?:\\n)*)(`{3,}|~{3,})([A-Za-z][\w+-]*)\\n([^\r\n]*?)\\n\2((?:\\n)*)/g,
+		(whole: string, prefix: string, fence: string, language: string, body: string, suffix: string, offset: number) => {
+			const before = text.slice(0, offset), after = text.slice(offset + whole.length);
+			if ((!prefix && !/(?:^|\n)[ \t]{0,3}$/.test(before)) || (!suffix && !/^[ \t]*(?:\r?\n|$)/.test(after))) return whole;
+			if (literals.some(range => range.start < offset + whole.length && range.end > offset &&
+				(range.start !== offset + prefix.length || range.end !== offset + whole.length - suffix.length))) return whole;
+			// Protect quoted literals and slash-delimited regex before decoding
+			// structural newlines. Ambiguous/unclosed quotes leave the fence alone.
+			let out = "", i = 0;
+			while (i < body.length) {
+				const char = body[i]!;
+				if (char === '"' || char === "'" || char === "`") {
+					let end = i + 1;
+					for (; end < body.length; end++) {
+						if (body[end] === "\\") { end++; continue; }
+						if (body[end] === char) break;
+					}
+					if (end >= body.length) return whole;
+					out += body.slice(i, end + 1); i = end + 1; continue;
+				}
+				if (char === "/") {
+					const regex = /^\/(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\])+\/[a-z]*/.exec(body.slice(i));
+					if (regex) { out += regex[0]; i += regex[0].length; continue; }
+				}
+				if (char === "\\" && body[i + 1] === "n" && !knownTexCommand(/^n[A-Za-z]*/.exec(body.slice(i + 1))![0])) { out += "\n"; i += 2; continue; }
+				if (char === "\\" && body[i + 1] === "\\") { out += "\\\\"; i += 2; continue; }
+				out += char; i++;
+			}
+			return prefix.replaceAll("\\n", "\n") + fence + language + "\n" + out + "\n" + fence + suffix.replaceAll("\\n", "\n");
+		});
+}
+
 /** Document escapes are not arbitrary string decoding. Complete known TeX
- * words win over the prefix `\\n`; code is never inspected or rewritten. */
+ * words win over the prefix `\\n`; correctly framed code remains literal. */
 export function recoverDocumentLayout(text: string): string {
+	text = recoverEncodedCodeFences(text);
 	const spans = readContentSpans(text);
 	const candidates = spans.filter(span => span.kind !== "code").map(span => span.raw).join("\u0000");
 	const declared = new Set([

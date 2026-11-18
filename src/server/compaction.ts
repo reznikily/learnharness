@@ -28,6 +28,8 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { isDeepStrictEqual } from "node:util";
+import { isTurnRunning } from "./turn-liveness.ts";
 import type { Usage } from "@earendil-works/pi-ai";
 import {
 	activeCompactionOf,
@@ -229,6 +231,10 @@ async function compact(deps: CompactionDeps, chatId: string): Promise<void> {
 		const { summary, usage } = await summarize(prompt, deps.engine);
 		const trimmed = summary.trim();
 		if (!trimmed) return; // an empty summary is a refusal artifact — leave the record honest
+		// Dismissals and other turn-less writers may append while the model summarizes.
+		if (!isDeepStrictEqual(deps.chatStore.getChat(chatId)?.messages, messages)) {
+			throw new Error("Session changed during compaction; retry on the current history");
+		}
 
 		const firstKept = messages[cut]!;
 		const details: CompactionDetails = {
@@ -295,6 +301,28 @@ export async function ensureCompacted(deps: CompactionDeps, chatId: string): Pro
 	} finally {
 		state().inFlight.delete(chatId);
 	}
+}
+
+/** Manual entry: the usual tail and summary, without waiting for the auto threshold. */
+export async function manuallyCompact(deps: CompactionDeps, chatId: string): Promise<Response> {
+	const record = deps.chatStore.getChat(chatId);
+	if (!record) return Response.json({ error: "Unknown chat" }, { status: 404 });
+	const busy = () => isTurnRunning(chatId) || compactionInFlight(chatId);
+	if (busy()) return Response.json({ error: "Session is busy" }, { status: 409 });
+	if (deps.canStart?.() === false) return Response.json({ error: "Compaction is unavailable" }, { status: 403 });
+	const previous = activeCompactionOf(record.messages);
+	const cut = compactionCutIndex(record.messages);
+	const previousCut = previous ? record.messages.findIndex((m) => m.id === previous.details.firstKeptMessageId) : -1;
+	if (cut <= 0 || cut >= record.messages.length || (previous && cut <= previousCut)) {
+		return Response.json({ compacted: false });
+	}
+	await ensureCompacted({ ...deps, thresholdTokens: 0, canStart: () => !isTurnRunning(chatId) && deps.canStart?.() !== false }, chatId);
+	const current = deps.chatStore.getChat(chatId);
+	const marker = current && activeCompactionOf(current.messages);
+	if (!marker || marker.id === previous?.id) {
+		return Response.json({ error: "Compaction did not complete; history was preserved" }, { status: 502 });
+	}
+	return Response.json({ compacted: true, markerId: marker.id, model: marker.details.model });
 }
 
 /**

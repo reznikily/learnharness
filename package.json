@@ -25,11 +25,12 @@
 		"build:visuals": "node scripts/build-visual-runtime.mjs",
 		"test:diagrams:browser": "npm run build:visuals && tsx tests/diagrams.browser.ts",
 		"test:chat-width:browser": "tsx tests/chat-width.browser.ts",
+		"test:motion:browser": "tsx tests/motion-feedback.browser.ts",
 		"test:visuals:browser": "npm run build:visuals && tsx tests/visual-runtime.browser.ts && tsx tests/visual-performance.browser.ts && tsx tests/visual-motion.browser.ts && tsx tests/visual-wheel.browser.ts"
 	},
 	"dependencies": {
-		"@earendil-works/pi-agent-core": "1.4.0",
-		"@earendil-works/pi-ai": "1.4.0",
+		"@earendil-works/pi-agent-core": "1.5.0",
+		"@earendil-works/pi-ai": "1.5.0",
 		"@modelcontextprotocol/sdk": "1.32.1",
 		"@mozilla/readability": "^0.6.0",
 		"@radix-ui/react-use-controllable-state": "^1.2.6",

@@ -68,12 +68,12 @@ export function AbortTurnBody({
 			aria-modal="true"
 			aria-label={copy.title}
 			data-testid="abort-turn-dialog"
-			className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+			className="lh-fade-in fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm"
 			// A genuine click on the scrim cancels — the cautious default, like Esc.
 			{...backdropDismiss}
 		>
 			<div
-				className="mx-4 w-full max-w-sm rounded-xl border bg-card p-5 shadow-lg"
+				className="lh-pop mx-4 w-full max-w-sm rounded-xl border bg-card p-5 shadow-lg"
 				onClick={(e) => e.stopPropagation()}
 			>
 				<h2 className="text-sm font-semibold text-card-foreground" data-testid="abort-turn-title">

@@ -896,9 +896,9 @@ describe("the extraction pipeline (extractor → auditor → merger)", () => {
 
 		// Live: mid-audit the extractor's usage was fully accumulated (faux
 		// estimates tokens from the prompt/response text — deterministic,
-		// positive, with native first-conversation cache writes in 1.4).
+		// positive, with the entire first prompt counted as cache writes in Pi 1.5).
 		assert.equal(usageSeen.length, 1);
-		assert.ok(typeof usageSeen[0] === "number" && usageSeen[0]! > 0, "the extractor's step billed input tokens");
+		assert.equal(usageSeen[0], nativeUsage.extractor[0]!.input, "live fresh input matches native accounting, including zero");
 
 		// Persisted: the run appended ONE usage entry to the chat's
 		// extractions log — per-stage model + steps, with merge stats.
@@ -910,7 +910,8 @@ describe("the extraction pipeline (extractor → auditor → merger)", () => {
 		assert.equal(run.stages.extractor.model, "faux:faux-1");
 		assert.equal(run.stages.extractor.steps.length, 1); // the submit call — the run STOPS after a clean submit
 		const step = run.stages.extractor.steps[0]!;
-		assert.ok(step.inputTokens! > 0 && step.outputTokens! > 0, "estimated usage captured");
+		assert.equal(step.inputTokens, nativeUsage.extractor[0]!.input);
+		assert.ok(step.outputTokens! > 0, "estimated output usage captured");
 		assert.equal(step.cacheReadTokens, 0);
 		assert.equal(nativeUsage.extractor.length, 1);
 		assert.ok(nativeUsage.extractor[0]!.cacheWrite > 0, "fresh native conversation writes its cached prefix");

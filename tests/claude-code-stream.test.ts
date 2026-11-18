@@ -568,7 +568,7 @@ test("cwd is an empty temp dir; prompt and mcp config live in a separate private
 	assert.notEqual(privateDir, call.cwd);
 	assert.ok(!privateDir.startsWith(call.cwd + sep));
 	assert.equal(dirname(getFlagValue(call.args, "--mcp-config")), privateDir);
-	assert.equal(call.systemPrompt, "You are a tutor.");
+	assert.ok(call.systemPrompt.startsWith("You are a tutor.\n\n"));
 	assert.equal(call.mcpConfigMode, 0o600);
 
 	const mcpConfig = JSON.parse(call.mcpConfig) as { mcpServers: Record<string, { url: string }> };

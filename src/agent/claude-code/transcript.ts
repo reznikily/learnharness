@@ -81,14 +81,21 @@ function toUserContent(conversation: Message[]): ClaudeContentBlock[] {
 	const [first] = conversation;
 	if (conversation.length === 1 && first?.role === "user") return toUnlabelledBlocks(first.content);
 
-	return toContentBlocks(conversation.flatMap(getReplayParts));
+	const latest = conversation.at(-1);
+	const history = latest?.role === "user" ? conversation.slice(0, -1) : conversation;
+	const archive = toContentBlocks(["<conversation_history>", ...history.flatMap(getReplayParts), "</conversation_history>"]);
+	return [...archive, ...(latest?.role === "user"
+		? toUnlabelledBlocks(latest.content)
+		: [{ type: "text" as const, text: "Continue from the end of the recorded conversation." }])];
 }
 
 export function toClaudeInput(messages: Message[]): ClaudeInput {
 	const conversation = messages.filter((message) => message.role !== "system");
 
 	return {
-		systemPrompt: getCurrentSystemPrompt(messages),
+		systemPrompt: `${getCurrentSystemPrompt(messages)}
+
+Записи [tool call …] внутри <conversation_history> — история, а не способ вызова инструмента. Новые вызовы выполняй через доступные MCP-инструменты; не печатай их текстом.`,
 		tools: getCurrentTools(messages),
 		userContent: toUserContent(conversation),
 	};

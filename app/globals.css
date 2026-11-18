@@ -598,3 +598,63 @@ body {
 	outline: 1px solid var(--border);
 	border-radius: 0.25rem;
 }
+
+/* Motion pass (owner round, 2026-11-02). One-shot entrances on transform and
+   opacity only; nothing here moves layout or blocks input, and reduced motion
+   keeps the plain fade. The base-layer hit slop keeps a click on the edge of a
+   pressed button: scaling must not pull the target out from under the pointer.
+   transition-property is unlayered so transition-colors buttons also ease
+   scale; it has no effect on a button without a duration. */
+@layer base {
+	button:not(:disabled):active {
+		position: relative;
+	}
+	button:not(:disabled):active::after {
+		content: "";
+		position: absolute;
+		inset: -8px;
+	}
+}
+
+button:not(.sidebar-motion) {
+	transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke, opacity, box-shadow, filter, transform, translate, scale, rotate;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	button:not(:disabled):active {
+		scale: 0.97;
+		transition-duration: 60ms;
+	}
+	button:is(.w-full, [data-kbdrow], [role="radio"], [role="checkbox"]):not(:disabled):active {
+		scale: 0.99;
+	}
+}
+
+.lh-pop {
+	animation: settings-pop 150ms ease-out;
+}
+
+.lh-fade-in,
+.lh-fade-on-open[data-state="open"] {
+	animation: chrome-fade-in 160ms ease-out;
+}
+
+@keyframes lh-check-pop {
+	from {
+		scale: 0.6;
+	}
+	to {
+		scale: 1;
+	}
+}
+
+.lh-check-pop {
+	animation: lh-check-pop 200ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.lh-pop,
+	.lh-check-pop {
+		animation: chrome-fade-in 120ms ease-out;
+	}
+}

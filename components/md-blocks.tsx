@@ -112,7 +112,7 @@ export function CopyCorner({
 					});
 				}}
 			>
-				{copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+				{copied ? <CheckIcon className="lh-check-pop size-3.5" /> : <CopyIcon className="size-3.5" />}
 			</button>
 		</span>
 	);

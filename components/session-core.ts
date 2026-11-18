@@ -15,6 +15,7 @@
 
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
 import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import { signalSuccess } from "./success-signal";
 import {
 	needsContinuation,
 	pendingQuestionOf,
@@ -48,6 +49,11 @@ export interface SessionModelDeps {
 	/** Injectable retry timing (tests). */
 	pollMs?: number;
 	waitMaxMs?: number;
+}
+
+/** The optimistic-id test: only a message sent from this view carries one. */
+export function isLocalMessageId(id: string): boolean {
+	return id.startsWith("c_");
 }
 
 /** A local optimistic id (never a server stamp — absorption and the
@@ -229,6 +235,9 @@ export class SessionModel {
 	fetch: typeof globalThis.fetch;
 	/** Steers sent but not yet drained (the queued indicator's truth). */
 	private steerQueueValue: SteerQueueItem[] = [];
+	/** Replays are indistinguishable from live events on the wire; only a
+	 *  message generated after this view opened can celebrate. */
+	private readonly openedAt = Date.now();
 	private readonly pollMs: number;
 	private readonly waitMaxMs: number;
 	private onReattachSettled?: () => void;
@@ -461,6 +470,7 @@ export class SessionModel {
 						errorText: text,
 					});
 				});
+				if (agent.toolName === "conclude" && !agent.isError) this.signalLiveConclude(agent.toolCallId);
 				return true; // the execution layer updated the tool part's card
 			}
 			case "turn_end": {
@@ -837,7 +847,24 @@ export class SessionModel {
 	 *  result (fork 1), riding as its input event. */
 	submitAnswer(tool: string, toolCallId: string, output: QuestionAnswerData, questionKey?: string): Promise<void> {
 		void tool;
-		return this.send({ type: "answer", toolCallId, answer: output }, undefined, questionKey).then(() => undefined);
+		const onAccepted = () => {
+			if (output.kind === "quiz" && output.correct && !output.dontKnow) signalSuccess(`answer:${toolCallId}`);
+		};
+		return this.send({ type: "answer", toolCallId, answer: output }, onAccepted, questionKey).then(() => undefined);
+	}
+
+	/** The confirmed conclude's card celebrates only if this view saw it happen. */
+	private signalLiveConclude(toolCallId: string): void {
+		for (const message of this.tail) {
+			if (message.role !== "assistant") continue;
+			const call = message.content.find((block) => block.type === "toolCall" && block.id === toolCallId);
+			if (call?.type !== "toolCall") continue;
+			const outcome = (call.arguments as { outcome?: unknown }).outcome;
+			if (message.timestamp >= this.openedAt && (outcome === "solved" || outcome === "solvedWithHints")) {
+				signalSuccess(`conclude:${toolCallId}`);
+			}
+			return;
+		}
 	}
 
 	/** The dismissal path (owner design 2026-10-03, "A2"): the skipped

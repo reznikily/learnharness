@@ -1,11 +1,12 @@
 "use client";
 
-import { useContext } from "react";
+import { useContext, useEffect, useRef } from "react";
 import { CheckIcon, SettingsIcon, XIcon } from "lucide-react";
 import { JobsContext } from "@/components/jobs-context";
 import { ChatActionsContext } from "@/components/chat";
 import { isModelsRefusal, isProviderKeyRefusal, type JobKind, type JobRecord } from "@/src/core";
 import { BrailleSpinner } from "@/components/braille-spinner";
+import { playSuccess } from "@/components/success-motion";
 
 /**
  * The dispatch card (contracts.ts "THE ASYNC PROTOCOL" §4): the tool-call
@@ -30,6 +31,13 @@ export function DispatchCard({ toolCallId, kind }: { toolCallId: string; kind: J
 	const jobs = useContext(JobsContext);
 	const job = jobs.find((j) => j.toolCallId === toolCallId) ?? null;
 	const label = KIND_LABEL[kind];
+	const checkRef = useRef<SVGSVGElement>(null);
+	const lastStatusRef = useRef(job?.status);
+	// A witnessed running → done only: history arrives as unknown → done.
+	useEffect(() => {
+		if (lastStatusRef.current === "running" && job?.status === "done" && checkRef.current) playSuccess(checkRef.current, "pop");
+		lastStatusRef.current = job?.status;
+	}, [job?.status]);
 
 	if (!job || job.status === "running") {
 		return <DispatchActivityCard job={job} label={label} />;
@@ -52,7 +60,7 @@ export function DispatchCard({ toolCallId, kind }: { toolCallId: string; kind: J
 			className="flex items-center gap-2 text-xs text-muted-foreground"
 			data-testid="dispatch-settled"
 		>
-			{failed ? <XIcon className="size-3.5 text-red-500" /> : <CheckIcon className="size-3.5" />}
+			{failed ? <XIcon className="size-3.5 text-red-500" /> : <CheckIcon ref={checkRef} className="size-3.5" />}
 			<span className="font-medium uppercase tracking-wide">{label}</span>
 			<span>{failed ? "failed" : "finished"}</span>
 		</div>

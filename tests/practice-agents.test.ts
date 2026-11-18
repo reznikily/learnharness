@@ -213,7 +213,7 @@ describe("the practice agent", () => {
 		// not apply the teacher/prober user tool-toggle filter.
 		assert.deepEqual(
 			Object.keys(tools).sort(),
-			["conclude", "find", "grep", "list_propositions", "list_sessions", "ls", "pdf", "problem", "read", "research"],
+			["conclude", "demo", "find", "grep", "list_propositions", "list_sessions", "ls", "pdf", "problem", "read", "research", "visual"],
 		);
 		const withSearch = practiceTools({ ...ctxOf([]), jobs: { ...jobs, searchAvailable: () => true }, graph });
 		assert.ok(withSearch.research, "a live engine also keeps research");
@@ -396,6 +396,13 @@ describe("practice prompt composition (own directory + the formatting appendix)"
 	it("base precedes doctrine (00- sorts before 10-)", () => {
 		const prompt = composeInstructions("practice");
 		assert.ok(prompt.indexOf("The agent") < prompt.indexOf("# The practice session"));
+	});
+
+	it("visual protocol survives older practice preset overrides", () => {
+		const prompt = composeInstructions("practice", {}, { "practice/00-base.md": "Custom practice base" });
+		assert.ok(prompt.includes("lh-artifact:JOB_ID"));
+		assert.ok(prompt.includes("demoBuilder"));
+		assert.ok(prompt.includes("A completed visualization is not permission to pose or conclude a problem"));
 	});
 
 	it("the segment registry knows practice (override paths resolve)", () => {

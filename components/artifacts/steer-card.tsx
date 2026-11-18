@@ -4,6 +4,7 @@ import { CheckIcon, CircleX } from "lucide-react";
 import type { PdfResult, ResearchResult, SubagentArtifactData } from "@/src/core";
 import type { LhViewMessage } from "@/src/core";
 import { isSubagentFailure } from "@/src/core";
+import { FreshJobFade } from "@/components/success-motion";
 import { DemoOutputCard } from "@/components/artifacts/demo-card";
 import { PdfBriefCard, ResearchBriefCard } from "@/components/artifacts/job-card";
 import { VisualOutputCard } from "@/components/artifacts/visual-card";
@@ -58,9 +59,9 @@ export function SubagentSteerCard({ message, referencedJobs }: { message: LhView
 				<PdfCompleteBadge result={data.result as PdfResult} />
 			);
 		case "demo":
-			return <DemoOutputCard output={data.result} messageId={message.id} initialInverted={data.ui?.inverted ?? false} />;
+			return <FreshJobFade jobId={jobId}><DemoOutputCard output={data.result} messageId={message.id} initialInverted={data.ui?.inverted ?? false} /></FreshJobFade>;
 		case "visual":
-			return <VisualOutputCard output={data.result} messageId={message.id} initialInverted={data.ui?.inverted ?? false} />;
+			return <FreshJobFade jobId={jobId}><VisualOutputCard output={data.result} messageId={message.id} initialInverted={data.ui?.inverted ?? false} /></FreshJobFade>;
 	}
 }
 

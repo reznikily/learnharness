@@ -329,3 +329,34 @@ test("deleting a session discards its pending deliveries without starting a turn
 	assert.equal(stores.chatStore.getChat(owner.id), null);
 	assert.equal(wakes, 0);
 });
+
+for (const toolName of ["demo", "visual"] as const) test(`practice ${toolName}: shared builder dispatch and background delivery preserve the active problem`, async () => {
+	const { practiceTools } = await import("../src/agent/tools/practice.ts");
+	const { activeProblemOf } = await import("../src/core/native-messages.ts");
+	const owner = stores.chatStore.createChat("Practice visual fixture", "practice");
+	chats.push(owner.id);
+	const pose = { ...question, content: [{ type: "toolCall", id: "practice-pose", name: "problem", arguments: { statement: "Draw A", mode: "recall", modelSolution: "Private solution" } }] } as LhMessage;
+	const ack = { id: "pose-ack", role: "toolResult", toolCallId: "practice-pose", toolName: "problem", content: [{ type: "text", text: "posed" }], isError: false, timestamp: 2 } as LhMessage;
+	stores.chatStore.saveMessages(owner.id, [pose, ack]);
+	const activeBefore = activeProblemOf([pose, ack]);
+	assert(activeBefore);
+	let spawned = 0;
+	const tools = practiceTools({ chatId: owner.id, chatStore: stores.chatStore, jobs: { chatId: owner.id, jobStore: stores.jobStore, spawn: () => { spawned++; } } });
+	assert(tools[toolName]);
+	const dispatched = await tools[toolName]!.execute("practice-visual", toolName === "demo" ? { title: "A", brief: "Only the given automaton; no solution" } : { brief: "Only the given automaton; no solution" });
+	assert.equal(dispatched.isError, undefined);
+	assert.equal(spawned, 1);
+	const job = stores.jobStore.listJobs(owner.id)[0]!;
+	assert.equal(job.kind, "demo");
+	assert.equal((job.input as {format: string}).format, "components-v1");
+	const demoResult = { title: "A", html: "<div>A</div>", tested: true, notes: "Ready" } as const;
+	stores.jobStore.updateJob(job.id, { status: "done", result: demoResult, delivery: { kind: "result", status: "pending" } });
+	const live = agent();
+	assert(beginTurn(owner.id)); registerLiveAgent(owner.id, live.value);
+	const delivery = deliverJobResult(buildSubagentSteer(job, demoResult));
+	await until(() => live.handed.length === 1);
+	persist(owner.id, live.handed); unregisterLiveAgent(owner.id); settleSteers(owner.id, live.handed); endTurn(owner.id);
+	await delivery;
+	assert.deepEqual(activeProblemOf(stores.chatStore.getChat(owner.id)!.messages), activeBefore);
+	assert.equal((await tools.problem!.execute("second-pose", { statement: "Another", mode: "recall", modelSolution: "Private" })).isError, true);
+});

@@ -60,6 +60,23 @@ function qwenModel() {
 }
 
 describe("the model catalog projection", () => {
+	it("exposes current Gemini Argon for keyed OpenCode Go and resolves its native endpoint", () => {
+		const previous = process.env.OPENCODE_API_KEY;
+		process.env.OPENCODE_API_KEY = "test-key-opencode-catalog";
+		try {
+			const model = modelCatalog().models.find((m) => m.provider === "opencode-go" && m.id === "gemini-4-argon");
+			assert.ok(model, "Gemini Argon must appear in the picker");
+			assert.deepEqual(model.supportedLevels, ["low", "medium", "high"]);
+			assert.deepEqual(validateChatSettings({ model: { provider: "opencode-go", id: model.id } }), { ok: true });
+			const engine = piEngineForSpec({ provider: "opencode-go", id: model.id, thinkingLevel: "high" });
+			assert.equal(engine.model.api, "google-generative-ai");
+			assert.equal(engine.model.baseUrl, "https://opencode.ai/inference/go/google/v1beta");
+		} finally {
+			if (previous === undefined) delete process.env.OPENCODE_API_KEY;
+			else process.env.OPENCODE_API_KEY = previous;
+		}
+	});
+
 	it("serves the keyed providers' catalogs with the picker's DTO shape", () => {
 		const { models, defaults, providers, slots } = modelCatalog();
 		// 0.85.1 ships 366 OpenRouter models — the exact count is pi's, but
@@ -78,9 +95,8 @@ describe("the model catalog projection", () => {
 		assert.ok(glm, "glm-5.3-flash in catalog");
 		assert.deepEqual(glm!.supportedLevels, ["low", "high", "max"]);
 		assert.deepEqual(glm!.input, ["text", "image"]);
-		// pi's current glm price (pi 1.0.2 catalog refresh: cacheRead
-		// corrected 0.05 → 0.03; input/output unchanged since 0.87.1)
-		assert.deepEqual(glm!.cost, { input: 0.15, output: 0.5, cacheRead: 0.03, cacheWrite: 0 });
+		// Pin the Pi 1.5.0 catalog price, including the cached-input rate.
+		assert.deepEqual(glm!.cost, { input: 0.0285, output: 0.0923, cacheRead: 0.0285, cacheWrite: 0 });
 		// model slots wave: the providers surface + the resolved slot pins
 		const openrouter = providers.find((p) => p.id === "openrouter");
 		assert.ok(openrouter && openrouter.keyPresent, "openrouter federated (key pinned above)");

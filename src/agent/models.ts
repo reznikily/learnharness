@@ -14,6 +14,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { type ModelRole } from "../../config.ts";
 import { DEFAULT_THINKING_ORDER } from "../core/settings.ts";
 import packageMetadata from "../../package.json" with { type: "json" };
+import { geminiHistoryOptions } from "./gemini-history.ts";
 import { chatGPTModel } from "./chatgpt-bridge.ts";
 import { chatGPTStream } from "./chatgpt-stream.ts";
 import type { ChatGPTDispatchLifecycle } from "./chatgpt-request-cycle.ts";
@@ -167,9 +168,9 @@ export function piEngineForSpec(spec: ResolvedModelSpec, background: boolean | (
 				const currentLevel = thinkingPreference
 					? clampThinkingLevel(currentModel, thinkingPreference)
 					: defaultThinkingLevel(currentModel);
-				return current.streamSimple(permitImages(currentModel), context, { ...options, reasoning: currentLevel === "off" ? undefined : currentLevel });
+				return current.streamSimple(permitImages(currentModel), context, { ...geminiHistoryOptions(currentModel, context, options), reasoning: currentLevel === "off" ? undefined : currentLevel });
 			}
-			const requestOptions = { ...options, reasoning: level === "off" ? undefined : level };
+			const requestOptions = { ...geminiHistoryOptions(requestModel, context, options), reasoning: level === "off" ? undefined : level };
 			const purpose = typeof background === "function" ? background : () => background;
 			const stream = spec.provider === "chatgpt" ? chatGPTStream(purpose, lifecycle) : nativeId ? nativeSubscriptionStream(models.getProvider(nativeId)!, purpose, lifecycle) : models.streamSimple.bind(models);
 			return stream(requestModel, context, requestOptions);

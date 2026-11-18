@@ -245,13 +245,13 @@ export function MenuShell({
 			data-lh-menu=""
 			tabIndex={-1}
 			onKeyDown={onBodyKeyDown}
-			style={{ position: "fixed", zIndex: 60, ...placed.style, maxHeight: placed.maxHeight, overflowY: "auto" }}
+			style={{ position: "fixed", zIndex: 60, ...placed.style, maxHeight: placed.maxHeight, overflowY: "auto", transformOrigin: placed.side === "up" ? "bottom" : "top" }}
 			// The body is the arrow machine's focus home (input-less menus
 			// land focus here on open) — the focus STAYS, but the browser's
 			// default blue ring around it must not draw (owner, polish
 			// round). Arrow cycling moves DOM focus to the buttons, which
 			// carry their own hover/highlight; the ring is pure noise.
-			className={`${menuClass} outline-none`}
+			className={`lh-pop ${menuClass} outline-none`}
 		>
 			{children}
 		</div>,

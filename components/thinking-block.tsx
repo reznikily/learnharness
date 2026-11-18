@@ -85,6 +85,7 @@ export function ThinkingBlock({
 	inCard?: boolean;
 }) {
 	const [open, setOpen] = useState(() => resolveUserThinkingOpen(defaultOpen));
+	const toggledRef = useRef(false); // fades a click's reveal, never an arrival
 	// ⌘T: an explicit global set overrides every row (once set, rows re-sync).
 	const syncedRef = useRef(false);
 	useEffect(
@@ -118,6 +119,7 @@ export function ThinkingBlock({
 				type="button"
 				data-testid={testId ? `${testId}-trigger` : undefined}
 				onClick={(e) => {
+					toggledRef.current = true;
 					setOpen((v) => !v);
 					blurAfterPointerClick(e);
 				}}
@@ -128,7 +130,7 @@ export function ThinkingBlock({
 				<ChevronDownIcon className={cn("size-4 shrink-0 transition-transform", open ? "rotate-180" : "rotate-0")} />
 			</button>
 			{open && (
-				<span className="lh-prose mt-1.5 block whitespace-pre-wrap text-[15px] italic text-foreground/50"><PathText text={text} /></span>
+				<span className={cn("lh-prose mt-1.5 block whitespace-pre-wrap text-[15px] italic text-foreground/50", toggledRef.current && "lh-fade-in")}><PathText text={text} /></span>
 			)}
 		</div>
 	);

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ConfidenceRail } from "@/components/confidence-rail";
+import { useSuccessEffect } from "@/components/success-motion";
 import { GlyphMark } from "@/components/ui/glyph-mark";
 import { ThinkingBlock } from "@/components/thinking-block";
 import { PathText } from "@/components/file-path-chip";
@@ -20,9 +21,11 @@ import { answerForPresentation, parseAskInput, parseQuizInput } from "@/src/core
  * client — the card reveals his answer, the committed correct answer, and
  * the explanation, with NO verdict chips (owner ruling 2026-09-27).
  */
-export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionAnswerData; input?: unknown }) {
+export function AnsweredCard({ answer: savedAnswer, input, toolCallId }: { answer: QuestionAnswerData; input?: unknown; toolCallId?: string }) {
 	const answer = answerForPresentation(savedAnswer, input);
 	const [whyOpen, setWhyOpen] = useState(false); // the tucked explanation (predictions, owner 2026-10-03)
+	const correctChipRef = useRef<HTMLSpanElement>(null);
+	useSuccessEffect(answer.kind === "quiz" && answer.correct && !answer.dontKnow && toolCallId ? `answer:${toolCallId}` : null, correctChipRef, "celebrate");
 	if (answer.dismissed) {
 		return (
 			<div className="rounded-xl border bg-card p-4 text-sm text-muted-foreground">
@@ -62,6 +65,7 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 		<div
 			className="rounded-xl border bg-card p-4 text-card-foreground [&>*:last-child]:mb-0"
 			data-testid="answered-card"
+			data-success-root=""
 		>
 			<div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 				{/* The tool's OWN name first (owner 2026-10-09): probe-phase
@@ -82,7 +86,7 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 					(answer.dontKnow ? (
 						<span className="rounded bg-muted px-1.5 py-0.5">didn't know</span>
 					) : answer.correct ? (
-						<span className="rounded bg-green-500/15 px-1.5 py-0.5 text-green-500">correct</span>
+						<span ref={correctChipRef} className="relative rounded bg-green-500/15 px-1.5 py-0.5 text-green-500">correct</span>
 					) : (
 						<span className="rounded bg-red-500/15 px-1.5 py-0.5 text-red-500">incorrect</span>
 					))}
@@ -106,8 +110,9 @@ export function AnsweredCard({ answer: savedAnswer, input }: { answer: QuestionA
 						return (
 							<div
 								key={opt.index}
+								data-success-row={sel && key ? "" : undefined}
 								className={cn(
-									"flex items-center gap-2 rounded-lg border px-3 py-1.5",
+									"relative flex items-center gap-2 rounded-lg border px-3 py-1.5",
 									sel && key && "border-green-500/60 bg-green-500/10",
 									sel && !key && isQuiz && "border-red-500/60 bg-red-500/10",
 									sel && !isQuiz && "border-primary bg-accent",

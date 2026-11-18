@@ -23,6 +23,7 @@ import type { ArtifactPartProps } from "@/src/core";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useSuccessEffect } from "@/components/success-motion";
 import { ThinkingBlock } from "@/components/thinking-block";
 import { usePopoverDismiss } from "@/components/popover-dismiss";
 
@@ -105,6 +106,8 @@ export function ConcludeCard({ part }: ArtifactPartProps) {
 	const verdict = typeof input.verdict === "string" ? input.verdict : "";
 	const reveal =
 		typeof part.reveal === "string" ? part.reveal : typeof input.solutionReveal === "string" ? input.solutionReveal : "";
+	const chipRef = useRef<HTMLSpanElement>(null);
+	useSuccessEffect(outcome === "solved" || outcome === "solvedWithHints" ? `conclude:${part.toolCallId}` : null, chipRef, outcome === "solved" ? "celebrate" : "pop");
 
 	// The dismissal synthesis: no verdict, no reveal — one muted line (the
 	// learner clicked; the record needs only the fact).
@@ -124,7 +127,7 @@ export function ConcludeCard({ part }: ArtifactPartProps) {
 			<div className="mb-1 flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
 				Concluded
 				{(OUTCOME_LABEL[outcome] ?? "") !== "" && outcome !== "dismissed" && (
-					<span className={cn("rounded px-1.5 py-0.5", OUTCOME_CHIP[outcome] ?? OUTCOME_CHIP.movedOn)}>
+					<span ref={chipRef} className={cn("relative rounded px-1.5 py-0.5", OUTCOME_CHIP[outcome] ?? OUTCOME_CHIP.movedOn)}>
 						{OUTCOME_LABEL[outcome]}
 					</span>
 				)}
@@ -253,7 +256,7 @@ function MetadataPopover({
 						// EVERYTHING, the dialogs' law. Node-card info-box register;
 						// opening BELOW the trigger — always.
 						style={{ position: "fixed", top: anchor.top, left: anchor.left }}
-						className="z-50 w-80 max-w-[calc(100vw-1rem)] rounded-xl border bg-card p-4 text-left shadow-lg"
+						className="lh-pop z-50 w-80 max-w-[calc(100vw-1rem)] origin-top-left rounded-xl border bg-card p-4 text-left shadow-lg"
 					>
 				<dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
 						<dt className="text-muted-foreground">Mode</dt>

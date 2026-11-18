@@ -3,6 +3,7 @@
 import { useContext, useMemo } from "react";
 import { JobsContext } from "../jobs-context";
 import { MessageResponse } from "../ai-elements/message";
+import { FreshJobFade } from "../success-motion";
 import { DemoOutputCard } from "./demo-card";
 import { splitVisualReferences } from "@/src/core";
 import type { LhViewMessage, SubagentArtifactData } from "../../src/core";
@@ -18,7 +19,7 @@ export function InlineVisualText({ text, messages }: { text: string; messages: L
 		const result = data?.result ?? job?.result;
 		if (result && typeof result === "object" && "html" in result) {
 			if (result.html === "") return <div key={index} role="status" className="my-3 text-sm text-muted-foreground">{"notes" in result ? String(result.notes) : "Не удалось создать визуализацию"}</div>;
-			return <DemoOutputCard key={index} output={result} messageId={delivered?.id} />;
+			return <FreshJobFade key={index} jobId={part.jobId}><DemoOutputCard output={result} messageId={delivered?.id} /></FreshJobFade>;
 		}
 		return <div key={index} role="status" className="my-3 text-sm text-muted-foreground">{job?.status === "error" ? (job.error ?? "Не удалось создать визуализацию") : job || delivered ? "Подготовка визуализации…" : "Визуализация недоступна"}</div>;
 	})}</>;

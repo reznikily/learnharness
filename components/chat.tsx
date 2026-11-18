@@ -2,7 +2,8 @@
 
 import { createContext, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChatSession } from "@/components/session";
-import { visibleQueuedSteers } from "@/components/session-core";
+import { isLocalMessageId, visibleQueuedSteers } from "@/components/session-core";
+import { markFreshJob } from "@/components/success-motion";
 import { SetupDialog } from "@/components/setup-dialog";
 import { Hint } from "@/components/ui/hint";
 import { useModelSetup, selectedModelUnavailable, openModelPicker, ZeroKeysPill } from "@/components/setup-cta";
@@ -1056,6 +1057,7 @@ export function Chat({
 			for (const j of list) {
 				const prev = jobStatusRef.current.get(j.id);
 				if (prev === "running" && j.status !== "running") {
+					if (j.status === "done") markFreshJob(j.id);
 					// A settle — the blob leaves the dock via the store's jobs-changed
 					// announce at this very write (S5); this handler owns the RECORD.
 					// The record is only guaranteed complete when no turn is in
@@ -1346,7 +1348,7 @@ export function Chat({
 				    inset (the band is the authorship mark against the agent's
 				    transparent prose). The "You" label stays — one register
 				    with the thinking labels. */
-				className="my-2 w-full border-l-[calc(3ch-14px)] border-muted-foreground/30 bg-card py-1 pl-[14px] pr-4 font-ui text-xs"
+				className={`my-2 w-full border-l-[calc(3ch-14px)] border-muted-foreground/30 bg-card py-1 pl-[14px] pr-4 font-ui text-xs${isLocalMessageId(m.id) ? " lh-card-enter" : ""}`}
 			>
 						{/* The rail GROUPS (owner round 4, 2026-10-05): the YOU heading
 						    sits INSIDE the rail, same mono-xs register and same 1ch
@@ -1428,7 +1430,7 @@ export function Chat({
 								// transcript; answered ones render as graded records.
 								if (part.state === "output-available") {
 									return (
-										<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} />
+										<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} toolCallId={part.toolCallId} />
 									);
 								}
 								return null;
@@ -1649,9 +1651,9 @@ export function Chat({
 									</Shimmer>
 								</span>
 							)}
-							{openingError && <p role="alert" className="text-sm text-destructive">{OPENING_PROMPT_FAILURE}</p>}
+							{openingError && <p role="alert" className="lh-card-enter text-sm text-destructive">{OPENING_PROMPT_FAILURE}</p>}
 							{error && (
-								<div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm">
+								<div className="lh-card-enter flex items-center justify-between gap-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-sm">
 									<span>Something went wrong: {error.message}</span>
 									{retryable && (
 										<Button variant="outline" size="xs" data-testid="retry-failed-turn" onClick={retryFailedTurn}>
@@ -2430,7 +2432,7 @@ function DockOverlay({
 					    overlay is none by default. The isAtBottom/scrollToBottom
 					    context still reaches it — DockOverlay is a Conversation
 					    child. */}
-					<ConversationScrollButton className="pointer-events-auto bottom-full mb-2" />
+					<ConversationScrollButton className="lh-card-enter pointer-events-auto bottom-full mb-2" />
 				</div>
 				{/* The plan marginalia (owner, plan-placement round): the bare
 				    diagram in the band's right flank — boundaless, meet-fitted, part

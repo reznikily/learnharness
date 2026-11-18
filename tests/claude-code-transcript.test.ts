@@ -53,7 +53,7 @@ test("system prompt joins all system content, then the live sections", () => {
 		system({ content: "The learner switched topics.", sections: { goals: "Teach TLS.", style: null } }),
 		user("next"),
 	];
-	assert.equal(toClaudeInput(messages).systemPrompt, "You are a tutor.\n\nThe learner switched topics.\n\nTeach TLS.");
+	assert.ok(toClaudeInput(messages).systemPrompt.startsWith("You are a tutor.\n\nThe learner switched topics.\n\nTeach TLS."));
 });
 
 test("tools reflect toolsAdded minus toolsRemoved", () => {
@@ -91,9 +91,8 @@ test("history renders user, assistant text, tool call name+JSON args and tool re
 		'[tool call read] {"path":"notes.md"}',
 		"[tool result read]\n# Notes",
 		"[assistant]\nIt has a heading.",
-		"[user]\nsummarise it",
 	].join("\n\n");
-	assert.deepEqual(toClaudeInput(messages).userContent, [{ type: "text", text: expected }]);
+	assert.deepEqual(toClaudeInput(messages).userContent, [{ type: "text", text: `<conversation_history>\n\n${expected}\n\n</conversation_history>` }, { type: "text", text: "summarise it" }]);
 });
 
 test("error tool results are marked as errors in the replay", () => {
@@ -107,9 +106,8 @@ test("error tool results are marked as errors in the replay", () => {
 		"[user]\nopen missing.md",
 		'[tool call read] {"path":"missing.md"}',
 		"[tool result read error]\nENOENT",
-		"[user]\nwhy?",
 	].join("\n\n");
-	assert.deepEqual(toClaudeInput(messages).userContent, [{ type: "text", text: expected }]);
+	assert.deepEqual(toClaudeInput(messages).userContent, [{ type: "text", text: `<conversation_history>\n\n${expected}\n\n</conversation_history>` }, { type: "text", text: "why?" }]);
 });
 
 test("images in user and tool-result content become base64 image blocks", () => {
@@ -123,11 +121,12 @@ test("images in user and tool-result content become base64 image blocks", () => 
 		user("compare"),
 	];
 	assert.deepEqual(toClaudeInput(messages).userContent, [
-		{ type: "text", text: "[user]\nlook" },
+		{ type: "text", text: "<conversation_history>\n\n[user]\nlook" },
 		{ type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
 		{ type: "text", text: "[tool call screenshot] {}\n\n[tool result screenshot]" },
 		{ type: "image", source: { type: "base64", media_type: "image/jpeg", data: "BBBB" } },
-		{ type: "text", text: "[user]\ncompare" },
+		{ type: "text", text: "</conversation_history>" },
+		{ type: "text", text: "compare" },
 	]);
 });
 
@@ -138,7 +137,7 @@ test("transcript ending on a tool result renders as history with no trailing use
 		toolResult("read", [{ type: "text", text: "# Notes" }]),
 	];
 	const expected = ["[user]\nopen notes.md", '[tool call read] {"path":"notes.md"}', "[tool result read]\n# Notes"].join("\n\n");
-	assert.deepEqual(toClaudeInput(messages).userContent, [{ type: "text", text: expected }]);
+	assert.deepEqual(toClaudeInput(messages).userContent, [{ type: "text", text: `<conversation_history>\n\n${expected}\n\n</conversation_history>` }, { type: "text", text: "Continue from the end of the recorded conversation." }]);
 });
 
 test("thinking blocks are omitted from replay", () => {
@@ -150,7 +149,7 @@ test("thinking blocks are omitted from replay", () => {
 		]),
 		user("bye"),
 	];
-	assert.deepEqual(toClaudeInput(messages).userContent, [{ type: "text", text: "[user]\nhi\n\n[assistant]\nHello.\n\n[user]\nbye" }]);
+	assert.deepEqual(toClaudeInput(messages).userContent, [{ type: "text", text: "<conversation_history>\n\n[user]\nhi\n\n[assistant]\nHello.\n\n</conversation_history>" }, { type: "text", text: "bye" }]);
 });
 
 test('toStreamJsonLine emits {"type":"user","message":{"role":"user","content":[...]}}', () => {
@@ -158,4 +157,28 @@ test('toStreamJsonLine emits {"type":"user","message":{"role":"user","content":[
 		type: "user",
 		message: { role: "user", content: [{ type: "text", text: "hi" }] },
 	});
+});
+
+test("historical quiz remains data and latest user input stays outside the archive", () => {
+	const messages: Message[] = [
+		system({ content: "Teach databases.", toolsAdded: [{ ...READ_TOOL, name: "quiz" }] }),
+		user("Explain keys"),
+		assistant([{ type: "toolCall", id: "quiz-1", name: "quiz", arguments: { type: "check" } }]),
+		toolResult("quiz", [{ type: "text", text: "correct" }]),
+		user([{ type: "text", text: "Explain dependencies" }, { type: "image", data: "CCCC", mimeType: "image/png" }]),
+	];
+	const before = structuredClone(messages);
+	const input = toClaudeInput(messages);
+	const archive = input.userContent[0];
+	assert.ok(archive?.type === "text");
+	assert.ok(archive.text.startsWith("<conversation_history>\n\n"));
+	assert.ok(archive.text.endsWith("\n\n</conversation_history>"));
+	assert.ok(archive.text.includes('[tool call quiz] {"type":"check"}'));
+	assert.ok(!archive.text.includes("Explain dependencies"));
+	assert.deepEqual(input.userContent.slice(1), [
+		{ type: "text", text: "Explain dependencies" },
+		{ type: "image", source: { type: "base64", media_type: "image/png", data: "CCCC" } },
+	]);
+	assert.deepEqual(input.tools.map(t => t.name), ["quiz"]);
+	assert.deepEqual(messages, before);
 });

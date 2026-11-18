@@ -20,7 +20,7 @@ import { BRIDGE_SERVER_NAME, createToolBridge, toolNameFromMcp, type ToolBridge 
 const READ_TOOL: Tool = { name: "read", description: "Read a file", parameters: Type.Object({ path: Type.String() }) };
 const SCREENSHOT_TOOL: Tool = { name: "screenshot", description: "Capture the screen", parameters: Type.Object({}) };
 
-type BridgeServerConfig = { type: string; url: string; headers: { Authorization: string } };
+type BridgeServerConfig = { timeout?: number; type: string; url: string; headers: { Authorization: string } };
 
 function getServerConfig(bridge: ToolBridge): BridgeServerConfig {
 	const config = JSON.parse(bridge.mcpConfig) as { mcpServers: Record<string, BridgeServerConfig> };
@@ -42,6 +42,12 @@ async function connectClient(bridge: ToolBridge, authorization = getServerConfig
 function toolResult(content: ToolResultMessage["content"], isError = false): ToolResultMessage {
 	return { role: "toolResult", toolCallId: "call-1", toolName: "read", content, isError, timestamp: 0 };
 }
+
+test("local MCP timeout outlasts the learner wait instead of the CLI HTTP idle default", async (t) => {
+	const bridge = await createToolBridge([READ_TOOL]);
+	t.after(() => bridge.close());
+	assert.equal(getServerConfig(bridge).timeout, 30 * 60_000);
+});
 
 test("lists exactly the given tools with their JSON schemas", async (t) => {
 	const bridge = await createToolBridge([READ_TOOL, SCREENSHOT_TOOL]);
@@ -240,7 +246,7 @@ test('mcpConfig is {"mcpServers":{"learnharness":{"type":"http","url":...,"heade
 	assert.deepEqual(Object.keys(config.mcpServers), ["learnharness"]);
 
 	const server = getServerConfig(bridge);
-	assert.deepEqual(Object.keys(server).sort(), ["headers", "type", "url"]);
+	assert.deepEqual(Object.keys(server).sort(), ["headers", "timeout", "type", "url"]);
 	assert.equal(server.type, "http");
 	assert.match(server.url, /^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
 	assert.match(server.headers.Authorization, /^Bearer [0-9a-f]{64}$/);

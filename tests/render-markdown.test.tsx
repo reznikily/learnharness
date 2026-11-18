@@ -13,7 +13,7 @@ import React from "react";
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MessageResponse } from "../components/ai-elements/message.tsx";
+import { MessageResponse, ToolContentResponse } from "../components/ai-elements/message.tsx";
 import { MermaidError } from "../components/mermaid-error.tsx";
 import { transformMathDelimiters, healOverescapedCommands } from "../src/core/math-delims.ts";
 
@@ -444,3 +444,13 @@ describe("over-escaped command heal — doubled backslashes in tool args (owner 
 	});
 });
 
+
+ it("tool content renders encoded Refal as a block without a language prefix in code", () => {
+  const source = 'В лабе:\\n\\n```refal\\nVariable {\\n  = None;\\n}\\n```\\n\\nЧто вернёт вызов?';
+  const html = renderToStaticMarkup(<ToolContentResponse mode="static">{source}</ToolContentResponse>);
+  assert.ok(html.includes('data-testid="md-code"'));
+  assert.ok(html.includes('Variable'));
+  assert.ok(!html.includes('refal\\n'));
+  assert.ok(!html.includes('None;\\n'));
+  assert.ok(html.includes('Что вернёт вызов?'));
+ });

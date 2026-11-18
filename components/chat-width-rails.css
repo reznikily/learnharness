@@ -11,7 +11,7 @@
 	position: absolute;
 	top: 8px;
 	bottom: 8px;
-	width: 16px;
+	width: 24px;
 	pointer-events: auto;
 	cursor: col-resize;
 	touch-action: none;
@@ -30,10 +30,10 @@
 	opacity: 0;
 	transition: opacity 160ms ease-out;
 }
-.chat-width-handle[data-side="left"] span { left: 0; }
-.chat-width-handle[data-side="right"] span { right: 0; }
-.chat-width-rails:has(.chat-width-handle:hover) span { opacity: 0.3; }
+.chat-width-handle[data-side="left"] span { left: 12px; }
+.chat-width-handle[data-side="right"] span { right: 12px; }
+.chat-width-rails:has(.chat-width-handle:hover) span { opacity: 0.7; }
 .chat-width-rails:has(.chat-width-handle:focus-visible) span,
-.chat-width-rails[data-dragging] span { opacity: 0.65; }
+.chat-width-rails[data-dragging] span { opacity: 1; }
 .chat-width-shield { position: fixed; inset: -100vh -100vw; pointer-events: auto; cursor: col-resize; }
 @media (prefers-reduced-motion: reduce) { .chat-width-handle span { transition: none; } }

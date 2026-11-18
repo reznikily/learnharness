@@ -23,12 +23,20 @@ try {
  const initial = await geometry();
  assert.equal(initial.feed.width, 1200);
  assert.equal(initial.iframe.x - initial.feed.x, 24);
+ const handles = await page.$$eval('[role="separator"]', elements => elements.map(e => {
+  const hit = e.getBoundingClientRect();
+  const line = e.querySelector('span')!.getBoundingClientRect();
+  return { width: hit.width, lineLeft: line.left, lineRight: line.right };
+ }));
+ assert(handles.every(h => h.width >= 24), "hover target fills the message gutter");
+ assert(handles[0]!.lineLeft >= initial.feed.x + 8, "left line stays inside the window edge");
+ assert(handles[1]!.lineRight <= initial.feed.x + initial.feed.width - 8, "right line stays inside the window edge");
  const opacity = () => page.$eval('[role="separator"] span', e => getComputedStyle(e).opacity);
  assert.equal(await opacity(), "0");
- await page.mouse.move(244, 200);
+ await page.mouse.move(260, 200);
  await new Promise(r => setTimeout(r, 200));
- assert.equal(await opacity(), "0.3");
- await page.mouse.down(); await page.mouse.move(444, 200, { steps: 20 }); await page.mouse.up();
+ assert(Number(await opacity()) >= 0.65, "hover line is clearly visible");
+ await page.mouse.down(); await page.mouse.move(460, 200, { steps: 20 }); await page.mouse.up();
  const left = await geometry();
  assert.equal(left.feed.width, 800);
  assert.equal(left.feed.x, 440);
